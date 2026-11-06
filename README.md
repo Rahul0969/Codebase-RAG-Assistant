@@ -7,7 +7,8 @@ A free, local-first assistant for exploring repositories, searching code by mean
 - **C1:** FastAPI and React + Vite foundation.
 - **C2:** Safe, lightweight repository structure inspection.
 - **C3:** Tree-sitter AST-aware source-code chunking with file and line metadata.
-- Not implemented yet: embeddings, Chroma, Ollama RAG, citation validation, and MCP.
+- **C4:** local sentence-transformers embeddings and persistent Chroma indexing.
+- Not implemented yet: semantic search, Ollama RAG, citation validation, and MCP.
 
 ## Prerequisites
 
@@ -115,3 +116,28 @@ The tests use Python's built-in `unittest` and do not require an additional test
 8. MCP server and repository tools
 9. API integration and end-to-end testing
 10. Security, documentation, and final frontend design
+
+
+### Build a local vector index (C4)
+
+C4 embeds C3 code chunks with `sentence-transformers/all-MiniLM-L6-v2` and stores vectors in a persistent local ChromaDB database under `backend/data/chroma_db/`. The model runs on CPU and encodes in small batches (default 8) to reduce memory use. The first indexing run downloads the embedding model from Hugging Face; later runs reuse its local cache. No paid API key is used.
+
+Install the updated backend requirements (PyTorch and model dependencies can take time and disk space):
+
+```powershell
+cd backend
+python -m pip install -r requirements.txt
+cd ..
+```
+
+Then open http://127.0.0.1:8000/docs and use `POST /repository/index`:
+
+```json
+{
+  "repository_path": "C:\\Users\\YourUser\\Desktop\\sample-project",
+  "max_chars": 6000,
+  "batch_size": 8
+}
+```
+
+The endpoint chunks source files, creates normalized embeddings, and upserts them into a repository-specific Chroma collection. Re-indexing updates changed chunks and removes stale chunk IDs. The local vector database is excluded from Git. Keep the API bound to localhost and do not index repositories containing secrets.

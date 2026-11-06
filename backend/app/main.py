@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from .repository import inspect_repository
 from .chunker import chunk_repository, DEFAULT_MAX_CHARS, MIN_MAX_CHARS, MAX_MAX_CHARS
+from .embedding_service import index_repository, DEFAULT_BATCH_SIZE
 
 app = FastAPI(
     title="Codebase RAG Assistant API",
@@ -56,6 +57,27 @@ def chunk_repository_endpoint(request: ChunkRequest) -> dict:
     """Create syntax-aware chunks for supported source files in a repository."""
     try:
         return chunk_repository(request.repository_path, request.max_chars)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+class IndexRequest(BaseModel):
+    repository_path: str = Field(min_length=1, max_length=4096)
+    max_chars: int = Field(default=DEFAULT_MAX_CHARS, ge=MIN_MAX_CHARS, le=MAX_MAX_CHARS)
+    batch_size: int = Field(default=DEFAULT_BATCH_SIZE, ge=1, le=32)
+
+
+@app.post("/repository/index", tags=["indexing"])
+def index_repository_endpoint(request: IndexRequest) -> dict:
+    """Create local embeddings for repository chunks and persist them in ChromaDB."""
+    try:
+        return index_repository(
+            request.repository_path,
+            max_chars=request.max_chars,
+            batch_size=request.batch_size,
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:

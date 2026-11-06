@@ -13,36 +13,38 @@
 10. C10 — Security, documentation, deployment and final frontend design
 
 ## Current commit
-C3 — Implementation delivered; local dependency installation and verification pending.
+C4 — Implementation delivered; local dependency installation, real model/index verification and Git commit pending.
 
-## Done so far
-- C1 foundation created.
-- C2 safe repository inspection and API endpoint added.
-- C2 included nine unit tests; they passed in the original build environment.
-- C3 added Tree-sitter-based syntax-aware chunking.
-- C3 added `POST /repository/chunk`.
-- Chunks preserve relative paths, language, syntax kind, optional symbol, and 1-based line ranges.
-- Oversized definitions split on line boundaries; files without recognized definitions use module fallback chunks.
-- Added C3 unit tests and updated README.
+## Completed
+- C1: project foundation.
+- C2: safe repository inspection and API endpoint.
+- C3: Tree-sitter AST-aware code chunking and POST /repository/chunk.
+- C4: lazy-loaded sentence-transformers embedding service.
+- C4: default model `sentence-transformers/all-MiniLM-L6-v2`, CPU inference and batch size 8.
+- C4: persistent local ChromaDB collections, one per repository.
+- C4: chunk metadata stored with vectors; deterministic IDs upserted; stale IDs removed.
+- C4: POST /repository/index endpoint.
+- C4: added mocked unit tests for batching, metadata, stale cleanup and API errors.
 
-## Decisions
-- React + Vite frontend; keep it minimal until backend functionality is complete.
+## Technology decisions
+- React + Vite frontend; keep minimal until backend is complete.
 - FastAPI backend.
 - sentence-transformers embeddings.
-- Ollama local LLM.
+- Ollama local LLM (Qwen 2.5 planned for C6).
 - Chroma vector database.
 - Tree-sitter AST-aware chunking.
 - MCP server exposing repository tools.
-- Keras only for an optional reranker.
+- Keras optional reranker only.
 - Free and local-first; no paid APIs.
-- Keep early dependencies and runtime light for a Windows machine with 4 GB RAM.
+- CPU inference and small batches to be mindful of 4 GB RAM.
 - One commit at a time.
 
-## Open issues
-- Install the new Tree-sitter language-pack dependency on the user's Windows machine.
-- Run the full test suite and manually test `POST /repository/chunk`.
-- C3 has not been committed in the user's local Git repository.
-- Proceed to C4 only after C3 verification.
+## Pending
+- Install updated dependencies on Windows.
+- First run downloads the embedding model; verify actual model encoding.
+- Test POST /repository/index against a small sample repository.
+- Confirm C2/C3 Git commits and create the C4 Git commit.
+- Proceed to C5 only after C4 verification.
 
 ## Last model + what it did
-GPT-6: built the C3 code-chunking implementation, API endpoint, unit tests, and documentation. The current build environment had no network access and did not have Tree-sitter installed, so real-grammar parsing was not executed here; tests use a mocked parser and must be verified locally after installing requirements.
+GPT-6: added a lazy sentence-transformers embedding service, persistent Chroma indexing, FastAPI indexing endpoint, tests, requirements and documentation. Unit tests use a fake model/collection; actual model download and Chroma persistence must be verified locally.
