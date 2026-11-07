@@ -4,12 +4,12 @@ from pydantic import BaseModel, Field
 
 from .repository import inspect_repository
 from .chunker import chunk_repository, DEFAULT_MAX_CHARS, MIN_MAX_CHARS, MAX_MAX_CHARS
-from .embedding_service import index_repository, DEFAULT_BATCH_SIZE
+from .embedding_service import index_repository, search_repository, DEFAULT_BATCH_SIZE
 
 app = FastAPI(
     title="Codebase RAG Assistant API",
     description="Local-first API for understanding and searching code repositories.",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 # Vite's development server runs on port 5173 by default.
@@ -77,6 +77,25 @@ def index_repository_endpoint(request: IndexRequest) -> dict:
             request.repository_path,
             max_chars=request.max_chars,
             batch_size=request.batch_size,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+class SearchRequest(BaseModel):
+    repository_path: str = Field(min_length=1, max_length=4096)
+    query: str = Field(min_length=1, max_length=4000)
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+@app.post("/repository/search", tags=["search"])
+def search_repository_endpoint(request: SearchRequest) -> dict:
+    """Search indexed code chunks using semantic similarity."""
+    try:
+        return search_repository(
+            request.repository_path, query=request.query, top_k=request.top_k
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

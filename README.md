@@ -8,7 +8,8 @@ A free, local-first assistant for exploring repositories, searching code by mean
 - **C2:** Safe, lightweight repository structure inspection.
 - **C3:** Tree-sitter AST-aware source-code chunking with file and line metadata.
 - **C4:** local sentence-transformers embeddings and persistent Chroma indexing.
-- Not implemented yet: semantic search, Ollama RAG, citation validation, and MCP.
+- **C5:** semantic code search over indexed chunks, returning source paths, line ranges and similarity scores.
+- Not implemented yet: Ollama RAG, citation validation, and MCP.
 
 ## Prerequisites
 
@@ -51,6 +52,9 @@ Useful endpoints:
 - http://127.0.0.1:8000/health — health check
 - http://127.0.0.1:8000/docs — interactive API documentation
 - `POST /repository/inspect` — inspect a local repository
+- `POST /repository/chunk` — preview AST-aware code chunks
+- `POST /repository/index` — create/update a local vector index
+- `POST /repository/search` — retrieve semantically relevant code chunks
 
 ### Inspect a repository
 
@@ -141,3 +145,20 @@ Then open http://127.0.0.1:8000/docs and use `POST /repository/index`:
 ```
 
 The endpoint chunks source files, creates normalized embeddings, and upserts them into a repository-specific Chroma collection. Re-indexing updates changed chunks and removes stale chunk IDs. The local vector database is excluded from Git. Keep the API bound to localhost and do not index repositories containing secrets.
+
+
+### Search code by meaning (C5)
+
+After successfully indexing a repository with `POST /repository/index`, use `POST /repository/search` in Swagger UI. Enter a natural-language question or describe the code you are looking for:
+
+```json
+{
+  "repository_path": "C:\\Users\\YourUser\\Desktop\\sample-project",
+  "query": "Where is user authentication checked?",
+  "top_k": 5
+}
+```
+
+The search text is embedded with the same local sentence-transformers model used during indexing. Chroma returns the closest code chunks. Each match includes its relative file path, symbol (when available), language, chunk type, 1-based line range, code content, cosine distance and a normalized similarity value. Similarity is a retrieval score, not a probability or a guarantee that a result is correct. `top_k` is limited to 1–20 and the number of returned matches cannot exceed the number of indexed chunks.
+
+The repository must be indexed first. Re-index after changing source files so search results stay current. Search is local and does not call a paid API.
