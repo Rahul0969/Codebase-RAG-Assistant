@@ -18,7 +18,7 @@ export default function SearchPanel({ workspace }) {
     <section className="card" aria-labelledby="search-title">
       <h2 id="search-title">Code search</h2>
       <p className="muted">Describe what you are looking for in plain language.</p>
-      {!repositoryReady ? <p className="notice notice-warn" role="status">Index a repository first (Repository section).</p> : null}
+      {!repositoryReady ? <p className="notice notice-warn" role="status">Index a repository first on the Repository page.</p> : null}
       <form onSubmit={submit} className="stack">
         <label htmlFor="search-query">What are you looking for?</label>
         <div className="row">

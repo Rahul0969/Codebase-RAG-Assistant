@@ -1,4 +1,6 @@
 import unittest
+
+from path_guard_helper import bypass_path_guard
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -96,6 +98,9 @@ class TestAskRepository(unittest.TestCase):
 
 
 class TestAskEndpoint(unittest.TestCase):
+    def setUp(self):
+        bypass_path_guard(self)
+
     def request(self):
         return AskRequest(repository_path="C:/repo", question="Where is login?", top_k=4)
 

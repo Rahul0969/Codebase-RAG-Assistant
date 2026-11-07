@@ -13,7 +13,7 @@
 10. C10 — Security, documentation, deployment and final frontend design
 
 ## Current commit
-C9 — API integration and end-to-end testing delivered (builds on C8). Local verification with real Ollama, real FastAPI/MCP SDK and a real `npm install && npm run build`, plus Git commits for C6-C9, pending.
+C10 — Security, documentation, deployment and final frontend design delivered (builds on C9). All roadmap commits are implemented. Real-machine verification (npm install/build/test, real FastAPI, Ollama, MCP SDK, browser, Vercel) and Git commits C6-C10 are pending.
 
 ## Completed
 - C1: project foundation.
@@ -45,6 +45,9 @@ C9 — API integration and end-to-end testing delivered (builds on C8). Local ve
 - C9: frontend: services/api.js (timeouts, error kinds, response shape checks, loopback hint), services/errors.js, utils/evidence.js, utils/repo.js, hooks/useWorkspace.js, components (Repository, Search, Ask, EvidenceBadge, CodeBlock, Feedback), basic App/CSS; .env.example; vite.config.js.
 - C9 fixes: frontend `build` script was `vite` (dev server) -> `vite build`; dependencies pinned to ranges; stale-index and error-code handling.
 - C9 tests: tests/test_api_integration.py (workflow with fake model/Chroma, error codes, evidence propagation, optional TestClient HTTP tests; requirements-dev.txt adds httpx); frontend node:test suites (api, helpers).
+- C10 security: config.py (backend/.env loader for OLLAMA_*/RAG_* only, trusted origins, allowed hosts), security_middleware.py (pure ASGI: Host check vs DNS rebinding, Origin allow-list 403, private-network preflight header, nosniff/no-store), CORS with exact origins and no credentials, path guard on every API endpoint, run_api.py (loopback-only launcher with optional TLS), Chroma telemetry off.
+- C10 frontend: sidebar/header layout, dashboard with real checklist, repository/search/ask pages, settings (read-only), BackendHelp, responsive dark-navy CSS, vercel.json (build, dist, headers, CSP limited to loopback connections).
+- C10 tooling/docs: setup.bat, start.bat, start-backend.bat, start-frontend.bat, backend/.env.example, README rewrite, docs/SECURITY.md, docs/DEPLOYMENT.md (browser-to-localhost findings: Chrome/Edge local-network prompt, Firefox, Safari block).
 
 ## Technology decisions
 - React + Vite frontend; keep minimal until backend is complete.
@@ -61,6 +64,9 @@ C9 — API integration and end-to-end testing delivered (builds on C8). Local ve
 - One commit at a time.
 
 ## Pending
+- On the real machine: run setup.bat, npm run build, npm test, all Python tests (with requirements-dev.txt), then start.bat and try the full workflow with a real model.
+- Test the hosted-page connection in Chrome/Edge/Firefox/Safari after a real Vercel deployment; confirm browser prompts and RAG_TRUSTED_ORIGINS behavior.
+- Commit C6-C10 in order in Git; commit package-lock.json after npm install.
 - Run `npm install`, `npm run build`, `npm test` and the TestClient tests locally (not run in the authoring sandbox: no network).
 - Install `mcp` (pip install -r backend/requirements.txt), run tests, and try the server with MCP Inspector or a client; confirm tool schemas and call_tool behavior match the installed SDK version.
 - Decide in C9/C10 whether FastAPI endpoints should share the MCP path guard.
@@ -75,4 +81,13 @@ C9 — API integration and end-to-end testing delivered (builds on C8). Local ve
 - Confirm C2/C3/C4 Git commits exist in order, then create the C5 Git commit.
 
 ## Last model + what it did
-Claude: delivered C9. Backend: 113 tests pass in a sandbox with stand-in stubs for fastapi/pydantic (HTTP-level tests skipped). Frontend: 20 node tests pass; JSX syntax and imports checked with esbuild bundling (react not installed, so no render and no real `vite build`). Not verified: real FastAPI, browser behavior, real Ollama.
+Claude: delivered C10. Backend: 138 tests pass in a sandbox with stand-in stubs for fastapi/pydantic/mcp (7 skipped: HTTP-level and MCP-SDK tests). Frontend: 23 node tests pass; the app bundles with esbuild (react not installed, so no render and no real vite build). The .bat scripts, real FastAPI middleware stacking, Ollama, browsers and Vercel were not run or deployed.
+
+
+## Commit 10 correction and verification update (2026-11-07)
+
+- Corrected `tests/test_api_integration.py`: invalid repository paths now expect the API's specific `repository_path_invalid` error code in the HTTP response header.
+- Backend test suite rerun after correction: 134 passed, 0 failed, 4 skipped (MCP SDK package unavailable in the verification environment).
+- Python compile check: passed.
+- Frontend Node test suite: 23 passed, 0 failed.
+- Vite production build, real Ollama inference, Windows launcher execution, and Vercel deployment remain unverified and must be checked on the target machine.

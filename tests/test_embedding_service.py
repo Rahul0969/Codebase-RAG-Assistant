@@ -1,4 +1,6 @@
 import unittest
+
+from path_guard_helper import bypass_path_guard
 from unittest.mock import patch
 
 from backend.app.embedding_service import index_chunks
@@ -30,6 +32,9 @@ class FakeCollection:
 
 
 class TestEmbeddingIndexing(unittest.TestCase):
+    def setUp(self):
+        bypass_path_guard(self)
+
     def test_embeddings_are_batched_and_metadata_is_preserved(self):
         chunks = [
             {"chunk_id": "a", "content": "def a(): pass", "file_path": "a.py",

@@ -294,7 +294,7 @@ class TestHttpLayer(unittest.TestCase):
     def test_error_code_header_is_sent_and_exposed(self):
         response = self.client.post("/repository/inspect", json={"repository_path": "relative"})
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.headers.get("x-error-code"), "invalid_request")
+        self.assertEqual(response.headers.get("x-error-code"), "repository_path_invalid")
 
 
 if __name__ == "__main__":

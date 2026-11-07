@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .config import allowed_hosts, load_env_file, trusted_origins
 from .repository import inspect_repository
 from .chunker import chunk_repository, DEFAULT_MAX_CHARS, MIN_MAX_CHARS, MAX_MAX_CHARS
 from .embedding_service import (
@@ -22,9 +23,13 @@ from .llm_service import (
     LLMConfigError, LLMError, OllamaModelNotFoundError, OllamaResponseError,
     OllamaTimeoutError, OllamaUnavailableError, check_ollama, get_settings,
 )
+from .security import PathNotAllowedError, validate_repository_path
+from .security_middleware import LocalAccessMiddleware
 from .rag_service import ask_repository, DEFAULT_TOP_K as ASK_DEFAULT_TOP_K, MAX_TOP_K as ASK_MAX_TOP_K
 
-API_VERSION = "0.9.0"
+API_VERSION = "1.0.0"
+
+load_env_file()  # optional backend/.env (OLLAMA_* and RAG_* names only)
 
 app = FastAPI(
     title="Codebase RAG Assistant API",
@@ -32,15 +37,19 @@ app = FastAPI(
     version=API_VERSION,
 )
 
-# Vite's development server runs on port 5173 by default.
+# CORS decides what a *browser page* may read. It is not the security boundary by itself:
+# LocalAccessMiddleware (added last, so it runs first) also rejects bad Host and Origin headers.
+# No cookies or credentials are used, so allow_credentials stays False.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
+    allow_origins=trusted_origins(),
+    allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Accept"],
     expose_headers=["X-Error-Code"],
+    max_age=600,
 )
+app.add_middleware(LocalAccessMiddleware, allowed_hosts=allowed_hosts(), trusted_origins=trusted_origins())
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +57,14 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 def _error(status_code: int, message: str, code: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail=message, headers={"X-Error-Code": code})
+
+
+def _safe_repo(repository_path: str) -> str:
+    """Validate the folder (no system/credential folders, links, roots) and return its resolved path."""
+    try:
+        return str(validate_repository_path(repository_path))
+    except PathNotAllowedError as error:
+        raise _error(400, str(error), "repository_path_invalid") from error
 
 
 def _translate(error: Exception) -> HTTPException:
@@ -171,7 +188,7 @@ class InspectResponse(BaseModel):
 def inspect_repository_endpoint(request: RepositoryRequest) -> dict:
     """List supported source-file paths in a selected local repository."""
     try:
-        return inspect_repository(request.repository_path)
+        return inspect_repository(_safe_repo(request.repository_path))
     except (ValueError, RuntimeError) as error:
         raise _translate(error) from error
 
@@ -185,7 +202,7 @@ class ChunkRequest(BaseModel):
 def chunk_repository_endpoint(request: ChunkRequest) -> dict:
     """Create syntax-aware chunks for supported source files in a repository."""
     try:
-        return chunk_repository(request.repository_path, request.max_chars)
+        return chunk_repository(_safe_repo(request.repository_path), request.max_chars)
     except (ValueError, RuntimeError) as error:
         raise _translate(error) from error
 
@@ -222,7 +239,7 @@ def index_repository_endpoint(request: IndexRequest) -> dict:
     """Create local embeddings for repository chunks and persist them in ChromaDB."""
     try:
         return index_repository(
-            request.repository_path,
+            _safe_repo(request.repository_path),
             max_chars=request.max_chars,
             batch_size=request.batch_size,
         )
@@ -244,7 +261,7 @@ class IndexStatusResponse(BaseModel):
 def repository_status_endpoint(request: RepositoryRequest) -> dict:
     """Report whether a repository already has a local index (does not load the model)."""
     try:
-        return get_index_info(request.repository_path)
+        return get_index_info(_safe_repo(request.repository_path))
     except (ValueError, RuntimeError) as error:
         raise _translate(error) from error
 
@@ -282,7 +299,7 @@ def search_repository_endpoint(request: SearchRequest) -> dict:
     """Search indexed code chunks using semantic similarity."""
     try:
         return search_repository(
-            request.repository_path, query=request.query, top_k=request.top_k
+            _safe_repo(request.repository_path), query=request.query, top_k=request.top_k
         )
     except (ValueError, RuntimeError) as error:
         raise _translate(error) from error
@@ -362,7 +379,7 @@ def ask_repository_endpoint(request: AskRequest) -> dict:
     """Answer a question about an indexed repository using retrieved code and a local LLM."""
     try:
         return ask_repository(
-            request.repository_path, request.question, top_k=request.top_k,
+            _safe_repo(request.repository_path), request.question, top_k=request.top_k,
             include_source_text=request.include_source_text,
         )
     except (ValueError, RuntimeError) as error:

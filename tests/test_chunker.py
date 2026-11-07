@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+
+from path_guard_helper import bypass_path_guard
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -38,6 +40,9 @@ class FakeParser:
 
 
 class TestTreeSitterChunking(unittest.TestCase):
+    def setUp(self):
+        bypass_path_guard(self)
+
     def test_definition_nodes_prefer_nested_methods_over_class_container(self):
         method = FakeNode("function_definition", 10, 30, start_row=2)
         klass = FakeNode("class_definition", 0, 40, children=[method])

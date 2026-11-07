@@ -1,4 +1,6 @@
 import unittest
+
+from path_guard_helper import bypass_path_guard
 from unittest.mock import patch
 
 from backend.app.evidence_validator import extract_citations, validate_answer
@@ -121,6 +123,9 @@ MATCH = {"chunk_id": "c1", "content": "def login(user):\n    return check(user)"
 
 
 class TestEvidenceAwareRag(unittest.TestCase):
+    def setUp(self):
+        bypass_path_guard(self)
+
     def run_rag(self, answer, **kwargs):
         with patch("backend.app.rag_service.search_repository", return_value=search_result([dict(MATCH)])), \
              patch("backend.app.rag_service.generate_chat", return_value={"text": answer, "model": "qwen2.5:3b"}):

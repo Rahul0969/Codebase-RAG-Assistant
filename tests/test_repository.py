@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+
+from path_guard_helper import bypass_path_guard
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -9,6 +11,9 @@ from backend.app.repository import inspect_repository
 
 
 class TestRepositoryInspection(unittest.TestCase):
+    def setUp(self):
+        bypass_path_guard(self)
+
     def test_lists_supported_files_without_reading_other_file_types(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

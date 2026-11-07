@@ -126,7 +126,7 @@ export default function AskPanel({ workspace }) {
   return (
     <section className="card" aria-labelledby="ask-title">
       <h2 id="ask-title">Ask the codebase</h2>
-      {!repositoryReady ? <p className="notice notice-warn" role="status">Index a repository first (Repository section).</p> : null}
+      {!repositoryReady ? <p className="notice notice-warn" role="status">Index a repository first on the Repository page.</p> : null}
       {health.state === 'online' && ollama && !ollama.reachable ? (
         <div className="notice notice-warn" role="status">
           <strong>Ollama is not running</strong>

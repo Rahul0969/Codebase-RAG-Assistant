@@ -27,3 +27,12 @@ chroma_db/
 
 # Local Chroma vector database (generated)
 backend/data/
+
+# Secrets, certificates and local models (never commit)
+*.pem
+*.key
+*.gguf
+*.llamafile
+models/
+.ollama/
+.vercel/

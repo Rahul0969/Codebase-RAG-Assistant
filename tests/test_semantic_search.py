@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+
+from path_guard_helper import bypass_path_guard
 from pathlib import Path
 from unittest.mock import patch
 
@@ -42,6 +44,9 @@ class FakeClient:
 
 
 class TestSemanticSearch(unittest.TestCase):
+    def setUp(self):
+        bypass_path_guard(self)
+
     def test_search_returns_source_metadata_and_similarity(self):
         with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as db:
             collection = FakeCollection()
