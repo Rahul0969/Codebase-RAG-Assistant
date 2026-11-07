@@ -202,10 +202,10 @@ def generate_chat(messages: list[dict[str, str]], settings: LLMSettings | None =
     return {"text": text.strip(), "model": str(result.get("model") or settings.model)}
 
 
-def check_ollama(settings: LLMSettings | None = None) -> dict[str, Any]:
+def check_ollama(settings: LLMSettings | None = None, timeout: float = 10.0) -> dict[str, Any]:
     """Report whether Ollama is reachable and the configured model is downloaded."""
     settings = settings or get_settings()
-    result = _request(settings, "/api/tags", None, min(settings.timeout, 10.0))
+    result = _request(settings, "/api/tags", None, min(settings.timeout, timeout))
     models = result.get("models")
     if not isinstance(models, list):
         raise OllamaResponseError("Ollama returned an unexpected model list.")

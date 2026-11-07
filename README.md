@@ -12,7 +12,8 @@ A free, local-first assistant for exploring repositories, searching code by mean
 - **C6:** Ollama-powered RAG: `POST /repository/ask` retrieves code and answers with a local Qwen 2.5 model.
 - **C7:** answers carry `[path:start-end]` citations that are checked against the code actually retrieved.
 - **C8:** local MCP server (stdio) with five repository tools for MCP-compatible clients.
-- Not implemented yet: end-to-end integration tests (C9), final frontend and hardening (C10).
+- **C9:** consistent API (health, status, error codes), working web workflow (inspect, index, search, ask, citations) and integration tests.
+- Not implemented yet: final design, security hardening and Windows scripts (C10).
 
 ## Prerequisites
 
@@ -315,3 +316,37 @@ Typical order: `inspect_repository`, `index_repository` (again after code change
 **Practical limits (4 GB RAM machines):** the first `index_repository` run downloads the embedding model and large repositories can exceed a client's tool timeout (often 60 seconds); index through `POST /repository/index` in Swagger instead if that happens, then use the MCP tools. `ask_codebase` can take up to `OLLAMA_TIMEOUT` seconds (default 120). Logs go to the terminal's stderr, because stdout carries the protocol.
 
 **Tests:** `python -m unittest discover -s tests -v`. Tool logic is tested with mocks (no Ollama or model download). The server-registration tests are skipped automatically if the `mcp` package is not installed.
+
+
+### API integration and the web workflow (C9)
+
+**Endpoints (all `POST` with JSON unless noted)**
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | backend status, Ollama reachability and model, embedding and ChromaDB status (never loads models) |
+| `/repository/inspect` | safe file listing for a folder |
+| `/repository/chunk` | chunk preview (developer tool) |
+| `/repository/index` | chunk, embed and store |
+| `/repository/status` | is the repository indexed, and how many chunks/files/languages (new in C9) |
+| `/repository/search` | semantic search |
+| `/repository/ask` | RAG answer with citations and evidence status |
+| `GET /llm/status` | Ollama and model check |
+
+Every error has a readable `detail` string plus an `X-Error-Code` header: `invalid_request`, `not_indexed`, `ollama_unavailable`, `model_not_found`, `llm_timeout`, `llm_bad_response`, `llm_config_invalid`, `service_unavailable`. Status codes: 400 bad input or not indexed, 422 invalid body, 502 bad model reply, 503 service unavailable, 504 timeout. Inspect, index, search and status now have documented response models; their JSON is unchanged.
+
+**Web interface.** The frontend lives in `frontend/`. Copy `frontend/.env.example` to `frontend/.env.local` if your backend is not at `http://127.0.0.1:8000`. (`VITE_*` values are visible in the browser, so never put secrets there.)
+
+```powershell
+cd frontend
+npm install
+npm run dev        # http://127.0.0.1:5173
+npm run build      # production build into frontend/dist
+npm test           # frontend tests (Node's built-in test runner, no extra packages)
+```
+
+With the backend running, open the page and follow the sections top to bottom: type a folder path, **Inspect**, **Index**, then **Search** or **Ask**. Citations in answers are clickable and show the retrieved code; a failed check is shown in red, never green.
+
+**Fix in C9:** the frontend `build` script was `vite` (it started the dev server); it is now `vite build`. Dependency versions are no longer `latest`.
+
+**Tests:** backend `python -m unittest discover -s tests -v` (add `python -m pip install -r backend/requirements-dev.txt` to also run the HTTP-level tests); frontend `npm test`.

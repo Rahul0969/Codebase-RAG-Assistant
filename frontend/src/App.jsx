@@ -1,26 +1,21 @@
-import { useState } from 'react';
-
-const API_URL = 'http://127.0.0.1:8000';
+import AskPanel from './components/AskPanel.jsx';
+import RepositoryPanel from './components/RepositoryPanel.jsx';
+import SearchPanel from './components/SearchPanel.jsx';
+import { useWorkspace } from './hooks/useWorkspace.js';
 
 export default function App() {
-  const [status, setStatus] = useState('Not checked');
-
-  async function checkBackend() {
-    try {
-      const response = await fetch(`${API_URL}/health`);
-      if (!response.ok) throw new Error('Backend request failed');
-      const data = await response.json();
-      setStatus(data.status === 'ok' ? 'Connected' : 'Unexpected response');
-    } catch {
-      setStatus('Backend unavailable');
-    }
-  }
-
+  const workspace = useWorkspace();
+  const { health, checkBackend, api } = workspace;
   return (
-    <main>
+    <main className="page">
       <h1>Codebase RAG Assistant</h1>
-      <p>Backend status: {status}</p>
-      <button type="button" onClick={checkBackend}>Check backend</button>
+      <p className="status-line" role="status">
+        Backend: {health.state === 'online' ? 'connected' : health.state === 'checking' ? 'connecting…' : 'not reachable'}
+        {' '}({api.baseUrl}) <button type="button" className="btn btn-small" onClick={checkBackend}>Check again</button>
+      </p>
+      <RepositoryPanel workspace={workspace} />
+      <SearchPanel workspace={workspace} />
+      <AskPanel workspace={workspace} />
     </main>
   );
 }

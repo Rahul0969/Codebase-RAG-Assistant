@@ -13,7 +13,7 @@
 10. C10 — Security, documentation, deployment and final frontend design
 
 ## Current commit
-C8 — MCP server and repository tools delivered (builds on C6 and C7); local verification with real Ollama and the real MCP SDK, plus Git commits for C6, C7 and C8, pending. C4/C5 real-model verification still pending unless completed locally.
+C9 — API integration and end-to-end testing delivered (builds on C8). Local verification with real Ollama, real FastAPI/MCP SDK and a real `npm install && npm run build`, plus Git commits for C6-C9, pending.
 
 ## Completed
 - C1: project foundation.
@@ -41,6 +41,10 @@ C8 — MCP server and repository tools delivered (builds on C6 and C7); local ve
 - C8: mcp_tools.py (five tool functions, input validation, safe errors, result caps) and mcp_server.py (FastMCP, stdio) with backend/run_mcp_server.py launcher; tools: inspect_repository, index_repository, search_code, ask_codebase, get_repository_summary.
 - C8: security.validate_repository_path (absolute, no link root, no filesystem/home/OS/credential folders, optional RAG_ALLOWED_ROOTS); used only by MCP tools, not by FastAPI endpoints.
 - C8: embedding_service.get_index_info (index statistics without loading the embedding model); requirements.txt adds mcp>=1.2,<2.0.
+- C9: main.py rewritten for consistency: GET /health (Ollama, model, embedding, Chroma status without loading models), POST /repository/status, response models for inspect/index/search, X-Error-Code header and `_translate` error mapping; routes unchanged.
+- C9: frontend: services/api.js (timeouts, error kinds, response shape checks, loopback hint), services/errors.js, utils/evidence.js, utils/repo.js, hooks/useWorkspace.js, components (Repository, Search, Ask, EvidenceBadge, CodeBlock, Feedback), basic App/CSS; .env.example; vite.config.js.
+- C9 fixes: frontend `build` script was `vite` (dev server) -> `vite build`; dependencies pinned to ranges; stale-index and error-code handling.
+- C9 tests: tests/test_api_integration.py (workflow with fake model/Chroma, error codes, evidence propagation, optional TestClient HTTP tests; requirements-dev.txt adds httpx); frontend node:test suites (api, helpers).
 
 ## Technology decisions
 - React + Vite frontend; keep minimal until backend is complete.
@@ -57,6 +61,7 @@ C8 — MCP server and repository tools delivered (builds on C6 and C7); local ve
 - One commit at a time.
 
 ## Pending
+- Run `npm install`, `npm run build`, `npm test` and the TestClient tests locally (not run in the authoring sandbox: no network).
 - Install `mcp` (pip install -r backend/requirements.txt), run tests, and try the server with MCP Inspector or a client; confirm tool schemas and call_tool behavior match the installed SDK version.
 - Decide in C9/C10 whether FastAPI endpoints should share the MCP path guard.
 - Verify with real qwen2.5:3b how often it follows the citation format; tune the prompt if needed.
@@ -70,4 +75,4 @@ C8 — MCP server and repository tools delivered (builds on C6 and C7); local ve
 - Confirm C2/C3/C4 Git commits exist in order, then create the C5 Git commit.
 
 ## Last model + what it did
-Claude: added C8 (path guard, MCP tool layer, FastMCP stdio server, launcher, index info, tests, docs) after C6 and C7. 97 unit tests pass in a sandbox that had no fastapi, pydantic or mcp installed (small stand-in stubs used; the real SDKs were never run) and no Ollama/Chroma/embedding model. Server-registration tests are skipped if mcp is missing and have not run against the real SDK. The server has not been started or tested with a real MCP client.
+Claude: delivered C9. Backend: 113 tests pass in a sandbox with stand-in stubs for fastapi/pydantic (HTTP-level tests skipped). Frontend: 20 node tests pass; JSX syntax and imports checked with esbuild bundling (react not installed, so no render and no real `vite build`). Not verified: real FastAPI, browser behavior, real Ollama.

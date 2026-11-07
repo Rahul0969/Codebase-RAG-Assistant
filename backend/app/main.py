@@ -1,20 +1,35 @@
+"""FastAPI application: the local API used by the web UI.
+
+Workflow: GET /health -> POST /repository/inspect -> /repository/index ->
+/repository/search or /repository/ask. Every error response has a human-readable
+`detail` string and an `X-Error-Code` header the UI can rely on.
+"""
+from __future__ import annotations
+
+import importlib.util
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .repository import inspect_repository
 from .chunker import chunk_repository, DEFAULT_MAX_CHARS, MIN_MAX_CHARS, MAX_MAX_CHARS
-from .embedding_service import index_repository, search_repository, DEFAULT_BATCH_SIZE
+from .embedding_service import (
+    index_repository, search_repository, get_index_info,
+    DEFAULT_BATCH_SIZE, DEFAULT_EMBEDDING_MODEL,
+)
 from .llm_service import (
-    LLMError, OllamaResponseError, OllamaTimeoutError,
-    check_ollama,
+    LLMConfigError, LLMError, OllamaModelNotFoundError, OllamaResponseError,
+    OllamaTimeoutError, OllamaUnavailableError, check_ollama, get_settings,
 )
 from .rag_service import ask_repository, DEFAULT_TOP_K as ASK_DEFAULT_TOP_K, MAX_TOP_K as ASK_MAX_TOP_K
+
+API_VERSION = "0.9.0"
 
 app = FastAPI(
     title="Codebase RAG Assistant API",
     description="Local-first API for understanding and searching code repositories.",
-    version="0.6.0",
+    version=API_VERSION,
 )
 
 # Vite's development server runs on port 5173 by default.
@@ -24,11 +39,66 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Error-Code"],
 )
 
 
-class RepositoryRequest(BaseModel):
-    repository_path: str = Field(min_length=1, max_length=4096)
+# ---------------------------------------------------------------------------
+# Error translation
+# ---------------------------------------------------------------------------
+def _error(status_code: int, message: str, code: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail=message, headers={"X-Error-Code": code})
+
+
+def _translate(error: Exception) -> HTTPException:
+    """Map service exceptions to an HTTP error. Messages are already safe to show."""
+    message = str(error)
+    if isinstance(error, OllamaTimeoutError):
+        return _error(504, message, "llm_timeout")
+    if isinstance(error, OllamaResponseError):
+        return _error(502, message, "llm_bad_response")
+    if isinstance(error, OllamaModelNotFoundError):
+        return _error(503, message, "model_not_found")
+    if isinstance(error, OllamaUnavailableError):
+        return _error(503, message, "ollama_unavailable")
+    if isinstance(error, LLMConfigError):
+        return _error(503, message, "llm_config_invalid")
+    if isinstance(error, LLMError):
+        return _error(503, message, "llm_error")
+    if isinstance(error, ValueError):
+        if "no index" in message.lower():
+            return _error(400, message, "not_indexed")
+        return _error(400, message, "invalid_request")
+    return _error(503, message, "service_unavailable")
+
+
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
+class OllamaHealth(BaseModel):
+    reachable: bool
+    model: str | None = None
+    model_available: bool | None = None
+    message: str | None = None
+
+
+class EmbeddingHealth(BaseModel):
+    model: str
+    installed: bool
+    loaded: bool = False
+    note: str
+
+
+class ChromaHealth(BaseModel):
+    installed: bool
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    ollama: OllamaHealth
+    embedding: EmbeddingHealth
+    chromadb: ChromaHealth
 
 
 @app.get("/", tags=["health"])
@@ -37,19 +107,73 @@ def root() -> dict[str, str]:
     return {"message": "Codebase RAG Assistant API is running."}
 
 
-@app.get("/health", tags=["health"])
-def health() -> dict[str, str]:
-    """Lightweight health check for local development."""
-    return {"status": "ok"}
+def _is_installed(module_name: str) -> bool:
+    """True if a package can be imported, without importing it (no heavy start-up)."""
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ValueError):
+        return False
 
 
-@app.post("/repository/inspect", tags=["repository"])
+def _ollama_health() -> dict:
+    try:
+        settings = get_settings()
+    except LLMError as error:
+        return {"reachable": False, "model": None, "model_available": None, "message": str(error)}
+    try:
+        info = check_ollama(settings, timeout=2.0)
+    except LLMError as error:
+        return {"reachable": False, "model": settings.model, "model_available": None, "message": str(error)}
+    message = None if info["model_available"] else (
+        f"Model '{settings.model}' is not downloaded. Run: ollama pull {settings.model}")
+    return {"reachable": True, "model": settings.model,
+            "model_available": info["model_available"], "message": message}
+
+
+@app.get("/health", tags=["health"], response_model=HealthResponse)
+def health() -> dict:
+    """Lightweight status check. Never loads models or opens the vector database."""
+    return {
+        "status": "ok",
+        "version": API_VERSION,
+        "ollama": _ollama_health(),
+        "embedding": {
+            "model": DEFAULT_EMBEDDING_MODEL,
+            "installed": _is_installed("sentence_transformers"),
+            "loaded": False,
+            "note": "The embedding model is loaded the first time you index or search.",
+        },
+        "chromadb": {"installed": _is_installed("chromadb")},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Repository inspection and chunk preview
+# ---------------------------------------------------------------------------
+class RepositoryRequest(BaseModel):
+    repository_path: str = Field(min_length=1, max_length=4096)
+
+
+class FileEntry(BaseModel):
+    path: str
+    extension: str
+
+
+class InspectResponse(BaseModel):
+    repository_name: str
+    file_count: int
+    truncated: bool
+    skipped_directories: list[str] = []
+    files: list[FileEntry]
+
+
+@app.post("/repository/inspect", tags=["repository"], response_model=InspectResponse)
 def inspect_repository_endpoint(request: RepositoryRequest) -> dict:
     """List supported source-file paths in a selected local repository."""
     try:
         return inspect_repository(request.repository_path)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+    except (ValueError, RuntimeError) as error:
+        raise _translate(error) from error
 
 
 class ChunkRequest(BaseModel):
@@ -62,19 +186,38 @@ def chunk_repository_endpoint(request: ChunkRequest) -> dict:
     """Create syntax-aware chunks for supported source files in a repository."""
     try:
         return chunk_repository(request.repository_path, request.max_chars)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+    except (ValueError, RuntimeError) as error:
+        raise _translate(error) from error
 
 
+# ---------------------------------------------------------------------------
+# Indexing and search
+# ---------------------------------------------------------------------------
 class IndexRequest(BaseModel):
     repository_path: str = Field(min_length=1, max_length=4096)
     max_chars: int = Field(default=DEFAULT_MAX_CHARS, ge=MIN_MAX_CHARS, le=MAX_MAX_CHARS)
     batch_size: int = Field(default=DEFAULT_BATCH_SIZE, ge=1, le=32)
 
 
-@app.post("/repository/index", tags=["indexing"])
+class SkippedFile(BaseModel):
+    path: str
+    reason: str
+
+
+class IndexResponse(BaseModel):
+    repository_name: str
+    file_count_scanned: int
+    chunk_count: int
+    indexed_count: int
+    removed_stale_count: int
+    embedding_model: str
+    embedding_dimensions: int
+    storage: str
+    truncated: bool
+    skipped_files: list[SkippedFile] = []
+
+
+@app.post("/repository/index", tags=["indexing"], response_model=IndexResponse)
 def index_repository_endpoint(request: IndexRequest) -> dict:
     """Create local embeddings for repository chunks and persist them in ChromaDB."""
     try:
@@ -83,10 +226,27 @@ def index_repository_endpoint(request: IndexRequest) -> dict:
             max_chars=request.max_chars,
             batch_size=request.batch_size,
         )
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+    except (ValueError, RuntimeError) as error:
+        raise _translate(error) from error
+
+
+class IndexStatusResponse(BaseModel):
+    indexed: bool
+    chunk_count: int
+    file_count: int
+    languages: dict[str, int] = {}
+    kinds: dict[str, int] = {}
+    symbol_count: int = 0
+    embedding_model: str | None = None
+
+
+@app.post("/repository/status", tags=["indexing"], response_model=IndexStatusResponse)
+def repository_status_endpoint(request: RepositoryRequest) -> dict:
+    """Report whether a repository already has a local index (does not load the model)."""
+    try:
+        return get_index_info(request.repository_path)
+    except (ValueError, RuntimeError) as error:
+        raise _translate(error) from error
 
 
 class SearchRequest(BaseModel):
@@ -95,19 +255,42 @@ class SearchRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
 
 
-@app.post("/repository/search", tags=["search"])
+class SearchMatch(BaseModel):
+    chunk_id: str
+    content: str
+    file_path: str
+    language: str
+    kind: str
+    symbol: str | None = None
+    start_line: int | None = None
+    end_line: int | None = None
+    parse_has_error: bool = False
+    distance: float
+    similarity: float
+
+
+class SearchResponse(BaseModel):
+    repository_name: str
+    query: str
+    result_count: int
+    embedding_model: str
+    matches: list[SearchMatch]
+
+
+@app.post("/repository/search", tags=["search"], response_model=SearchResponse)
 def search_repository_endpoint(request: SearchRequest) -> dict:
     """Search indexed code chunks using semantic similarity."""
     try:
         return search_repository(
             request.repository_path, query=request.query, top_k=request.top_k
         )
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+    except (ValueError, RuntimeError) as error:
+        raise _translate(error) from error
 
 
+# ---------------------------------------------------------------------------
+# RAG question answering
+# ---------------------------------------------------------------------------
 class SourceInfo(BaseModel):
     source_id: int
     file_path: str
@@ -174,15 +357,6 @@ class AskResponse(BaseModel):
     retrieved_chunks: list[RetrievedChunk]
 
 
-def _llm_http_error(error: LLMError) -> HTTPException:
-    """Map local-LLM failures to status codes without leaking internals."""
-    if isinstance(error, OllamaTimeoutError):
-        return HTTPException(status_code=504, detail=str(error))
-    if isinstance(error, OllamaResponseError):
-        return HTTPException(status_code=502, detail=str(error))
-    return HTTPException(status_code=503, detail=str(error))
-
-
 @app.post("/repository/ask", tags=["rag"], response_model=AskResponse)
 def ask_repository_endpoint(request: AskRequest) -> dict:
     """Answer a question about an indexed repository using retrieved code and a local LLM."""
@@ -191,12 +365,8 @@ def ask_repository_endpoint(request: AskRequest) -> dict:
             request.repository_path, request.question, top_k=request.top_k,
             include_source_text=request.include_source_text,
         )
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    except LLMError as error:
-        raise _llm_http_error(error) from error
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+    except (ValueError, RuntimeError) as error:
+        raise _translate(error) from error
 
 
 @app.get("/llm/status", tags=["rag"])
@@ -205,4 +375,4 @@ def llm_status_endpoint() -> dict:
     try:
         return check_ollama()
     except LLMError as error:
-        raise _llm_http_error(error) from error
+        raise _translate(error) from error
