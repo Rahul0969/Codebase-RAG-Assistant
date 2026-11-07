@@ -13,7 +13,7 @@
 10. C10 — Security, documentation, deployment and final frontend design
 
 ## Current commit
-C5 — Semantic search implementation delivered; local verification and Git commit pending. C4 real model/index verification is still pending unless completed locally.
+C6 — Ollama-powered RAG delivered; local verification with real Ollama and Git commit pending. C4/C5 real-model verification still pending unless completed locally.
 
 ## Completed
 - C1: project foundation.
@@ -29,6 +29,12 @@ C5 — Semantic search implementation delivered; local verification and Git comm
 - C5: added POST /repository/search with query validation and top_k limit (1–20).
 - C5: results include code content, relative path, symbol, language, 1-based line range, cosine distance and normalized similarity.
 - C5: added mocked tests for result mapping, empty indexes, validation and API errors.
+- C6: llm_service.py (stdlib HTTP client for local Ollama; loopback-only base URL; typed errors; one generation at a time).
+- C6: rag_service.py (search -> line-numbered, redacted, size-limited context -> Ollama; insufficient-context path skips the LLM).
+- C6: security.py (best-effort secret redaction that preserves line counts).
+- C6: POST /repository/ask and GET /llm/status; AskResponse models; status codes 400/422/502/503/504.
+- C6 fix: chunker line ranges were wrong when a chunk started with blank lines; trimmed lines now move start/end together. Existing indexes need one re-index.
+- C6 fix: sensitive-name skip now also matches names with extensions (secrets.py, credentials.json) and .npmrc/.pypirc/.netrc.
 
 ## Technology decisions
 - React + Vite frontend; keep minimal until backend is complete.
@@ -39,11 +45,14 @@ C5 — Semantic search implementation delivered; local verification and Git comm
 - Tree-sitter AST-aware chunking.
 - MCP server exposing repository tools.
 - Keras optional reranker only.
+- Ollama default model qwen2.5:3b (override with OLLAMA_MODEL; qwen2.5:1.5b for very low RAM). No new dependency in C6.
 - Free and local-first; no paid APIs.
 - CPU inference and small batches to be mindful of 4 GB RAM.
 - One commit at a time.
 
 ## Pending
+- Install Ollama, run `ollama pull qwen2.5:3b`, and verify GET /llm/status then POST /repository/ask on a small indexed repo.
+- Re-run POST /repository/index on existing indexes (line-number fix).
 - Install updated dependencies on Windows.
 - First run downloads the embedding model; verify actual model encoding.
 - Test POST /repository/index against a small sample repository.
@@ -52,4 +61,4 @@ C5 — Semantic search implementation delivered; local verification and Git comm
 - Confirm C2/C3/C4 Git commits exist in order, then create the C5 Git commit.
 
 ## Last model + what it did
-GPT-6: added semantic search over C4 Chroma indexes, FastAPI POST /repository/search, metadata-rich match results, validation, tests and documentation. Tests use fake model/Chroma objects; real model inference and local Chroma query must be verified on the user’s machine.
+Claude: inspected the C5 ZIP, fixed the chunker line-range bug and wider sensitive-name matching, added C6 (Ollama client, RAG service, /repository/ask, /llm/status, tests, docs). 54 unit tests pass in a sandbox that lacked fastapi/pydantic (small stand-in stubs used, real FastAPI not run) and had no Ollama, ChromaDB or embedding model. Real Ollama, Chroma and FastAPI behavior must be verified on the user's machine.

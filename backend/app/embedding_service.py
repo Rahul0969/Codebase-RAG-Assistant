@@ -85,7 +85,8 @@ def index_chunks(chunks: list[dict], collection: Any, model: Any,
     # Upsert first so a failed embedding pass never destroys the previous index.
     collection.upsert(ids=ids, documents=documents, metadatas=metadatas, embeddings=vectors)
     existing = collection.get(include=[]).get("ids", [])
-    stale_ids = [item for item in existing if item not in set(ids)]
+    current_ids = set(ids)
+    stale_ids = [item for item in existing if item not in current_ids]
     if stale_ids:
         collection.delete(ids=stale_ids)
 

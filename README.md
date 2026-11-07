@@ -9,7 +9,8 @@ A free, local-first assistant for exploring repositories, searching code by mean
 - **C3:** Tree-sitter AST-aware source-code chunking with file and line metadata.
 - **C4:** local sentence-transformers embeddings and persistent Chroma indexing.
 - **C5:** semantic code search over indexed chunks, returning source paths, line ranges and similarity scores.
-- Not implemented yet: Ollama RAG, citation validation, and MCP.
+- **C6:** Ollama-powered RAG: `POST /repository/ask` retrieves code and answers with a local Qwen 2.5 model.
+- Not implemented yet: citation validation and MCP.
 
 ## Prerequisites
 
@@ -115,7 +116,7 @@ The tests use Python's built-in `unittest` and do not require an additional test
 3. Tree-sitter AST-aware code chunking (implemented)
 4. Sentence-transformers embeddings and Chroma indexing
 5. Semantic code search
-6. Ollama-powered RAG
+6. Ollama-powered RAG (implemented)
 7. Source citations and evidence validation
 8. MCP server and repository tools
 9. API integration and end-to-end testing
@@ -162,3 +163,64 @@ After successfully indexing a repository with `POST /repository/index`, use `POS
 The search text is embedded with the same local sentence-transformers model used during indexing. Chroma returns the closest code chunks. Each match includes its relative file path, symbol (when available), language, chunk type, 1-based line range, code content, cosine distance and a normalized similarity value. Similarity is a retrieval score, not a probability or a guarantee that a result is correct. `top_k` is limited to 1–20 and the number of returned matches cannot exceed the number of indexed chunks.
 
 The repository must be indexed first. Re-index after changing source files so search results stay current. Search is local and does not call a paid API.
+
+
+### Ask questions about your code (C6)
+
+C6 connects C5 search to a local LLM through [Ollama](https://ollama.com). Flow: your question -> semantic search -> the best chunks (secrets masked, line-numbered, size-limited) -> Qwen 2.5 on your computer -> answer plus the sources that were shown to the model. Nothing is sent to a hosted AI service, and the backend refuses any Ollama address that is not on your own computer.
+
+**One-time setup (PowerShell):**
+
+```powershell
+# 1. Install Ollama from https://ollama.com, then download the model (about 2 GB):
+ollama pull qwen2.5:3b
+# On a 4 GB machine, if it is too slow or runs out of memory, use the smaller model:
+#   ollama pull qwen2.5:1.5b
+#   $env:OLLAMA_MODEL = "qwen2.5:1.5b"
+
+# 2. Start the backend (no new Python packages are needed for C6):
+cd backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+**Use it:** index first (`POST /repository/index`), then open http://127.0.0.1:8000/docs and call `POST /repository/ask`:
+
+```json
+{
+  "repository_path": "C:\\Users\\YourUser\\Desktop\\sample-project",
+  "question": "Where is user authentication implemented?",
+  "top_k": 5
+}
+```
+
+Check your setup any time with `GET /llm/status` (is Ollama running, is the model downloaded?).
+
+**Response fields:** `answer`, `model`, `evidence_status` (`retrieved` or `insufficient_context`), `success`, `retrieved_count`, `used_chunk_count`, `sources` (file, symbol, line range, similarity), `context_chars`, `context_truncated`. If nothing relevant is retrieved, the model is **not** called and you get an insufficient-context status.
+
+**Status codes:** 400 bad input or repository not indexed; 422 invalid request body; 502 malformed Ollama reply; 503 Ollama not running, model not downloaded, or ChromaDB/embedding unavailable; 504 timeout.
+
+**Settings (environment variables, all optional):**
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | must be localhost / 127.0.0.1 |
+| `OLLAMA_MODEL` | `qwen2.5:3b` | any model you have pulled |
+| `OLLAMA_TIMEOUT` | `120` | seconds; first request after loading is slowest |
+| `OLLAMA_NUM_CTX` | `4096` | context window (tokens) |
+| `OLLAMA_NUM_PREDICT` | `512` | max answer length (tokens) |
+| `OLLAMA_KEEP_ALIVE` | `2m` | how long Ollama keeps the model in RAM |
+| `RAG_MAX_CONTEXT_CHARS` | `6000` | total code sent to the model |
+| `RAG_MAX_CHUNK_CHARS` | `2500` | per-chunk limit |
+| `RAG_MIN_SIMILARITY` | `0.15` | chunks scoring lower are ignored |
+
+Set one in PowerShell like this: `$env:OLLAMA_MODEL = "qwen2.5:1.5b"` (applies to that terminal window).
+
+**Safety design:** the system prompt tells the model to treat retrieved code as untrusted data and ignore instructions hidden in it; repository text cannot close the prompt's delimiter tags; likely secrets (private keys, API keys, tokens, `password = "..."`) are masked before the model sees them (best effort, not a guarantee); nothing from the repository is ever executed; only one generation runs at a time. A small model can still be wrong, so C7 adds citation checking.
+
+**Fixes made while building C6**
+
+- Chunk line numbers were off when a split chunk began with blank lines (the range started too early). Ranges now always match the stored text. **Re-run `POST /repository/index` once** so existing indexes get corrected line numbers; stale chunks are removed automatically.
+- Files named like `secrets.py` or `credentials.json` are now skipped (before, only exact names without an extension were).
+- Stale-chunk cleanup no longer rebuilds a set on every loop iteration.
+
+**Run the tests:** `python -m unittest discover -s tests -v`. All Ollama tests use mocks; no model download is needed. An optional real check is `GET /llm/status` followed by one `POST /repository/ask` on a small indexed project.

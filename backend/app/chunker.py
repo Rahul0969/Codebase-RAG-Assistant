@@ -109,6 +109,28 @@ def _make_chunk(path: str, language: str, kind: str, symbol: str | None,
     }
 
 
+def _emit_chunk(path: str, language: str, kind: str, symbol: str | None,
+                first_line: int, lines: list[str], parse_has_error: bool) -> list[dict]:
+    """Build one chunk, trimming blank edge lines while keeping line numbers exact.
+
+    Trimming must move start_line/end_line together with the content. Otherwise
+    the stored range would not match the stored text, and citations would point
+    at the wrong lines.
+    """
+    start = 0
+    end = len(lines)
+    while start < end and not lines[start].strip():
+        start += 1
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    if start >= end:
+        return []
+    content = "".join(lines[start:end]).rstrip("\r\n")
+    return [_make_chunk(path, language, kind, symbol,
+                        first_line + start, first_line + end - 1,
+                        content, parse_has_error)]
+
+
 def _split_text(path: str, language: str, kind: str, symbol: str | None,
                 start_line: int, text: str, max_chars: int,
                 parse_has_error: bool) -> list[dict]:
@@ -116,32 +138,24 @@ def _split_text(path: str, language: str, kind: str, symbol: str | None,
     lines = text.splitlines(keepends=True)
     if not lines:
         return []
-    chunks = []
+    chunks: list[dict] = []
     current: list[str] = []
     current_length = 0
     chunk_start = start_line
-    line_number = start_line
 
-    for line in lines:
+    for index, line in enumerate(lines):
         if current and current_length + len(line) > max_chars:
-            content = "".join(current).strip("\n")
-            if content.strip():
-                chunks.append(_make_chunk(path, language, kind, symbol,
-                                          chunk_start, line_number - 1,
-                                          content, parse_has_error))
+            chunks.extend(_emit_chunk(path, language, kind, symbol, chunk_start,
+                                      current, parse_has_error))
             current = []
             current_length = 0
-            chunk_start = line_number
+            chunk_start = start_line + index
         # A single exceptionally long line is retained as one chunk.
         current.append(line)
         current_length += len(line)
-        line_number += 1
 
-    content = "".join(current).strip("\n")
-    if content.strip():
-        chunks.append(_make_chunk(path, language, kind, symbol,
-                                  chunk_start, line_number - 1,
-                                  content, parse_has_error))
+    chunks.extend(_emit_chunk(path, language, kind, symbol, chunk_start,
+                              current, parse_has_error))
     return chunks
 
 

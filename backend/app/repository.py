@@ -41,7 +41,10 @@ SUPPORTED_EXTENSIONS = {
 }
 
 SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"}
-SENSITIVE_NAMES = {"id_rsa", "id_ed25519", "credentials", "secrets"}
+SENSITIVE_NAMES = {
+    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "credentials", "secrets",
+    ".npmrc", ".pypirc", ".netrc", ".htpasswd",
+}
 MAX_FILES = 5000
 MAX_DEPTH = 20
 
@@ -120,7 +123,8 @@ def inspect_repository(repository_path: str) -> dict:
 
             if lower_name.startswith(".env"):
                 continue
-            if lower_name in SENSITIVE_NAMES:
+            # Match "secrets", "secrets.py", "credentials.json" and similar names.
+            if lower_name in SENSITIVE_NAMES or Path(lower_name).stem in SENSITIVE_NAMES:
                 continue
             if suffix in SENSITIVE_SUFFIXES:
                 continue
