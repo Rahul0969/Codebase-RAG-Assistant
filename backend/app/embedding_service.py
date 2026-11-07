@@ -209,3 +209,45 @@ def search_repository(repository_path: str, query: str, top_k: int = 5) -> dict:
         "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "matches": matches,
     }
+
+
+def get_index_info(repository_path: str) -> dict:
+    """Describe the stored index for a repository without loading the embedding model."""
+    repo = Path(repository_path).expanduser().resolve()
+    empty = {"indexed": False, "chunk_count": 0, "file_count": 0, "languages": {},
+             "kinds": {}, "symbol_count": 0, "embedding_model": None}
+    try:
+        import chromadb
+    except ImportError as error:
+        raise RuntimeError(
+            "ChromaDB is not installed. Run 'python -m pip install -r backend/requirements.txt'."
+        ) from error
+    if not DEFAULT_PERSIST_DIRECTORY.exists():
+        return empty
+    client = chromadb.PersistentClient(path=str(DEFAULT_PERSIST_DIRECTORY))
+    repo_hash = hashlib.sha256(str(repo).encode("utf-8")).hexdigest()[:16]
+    try:
+        collection = client.get_collection(name=f"repo_{repo_hash}")
+    except Exception:
+        return empty
+    count = collection.count()
+    if count == 0:
+        return {**empty, "indexed": True}
+    metadatas = collection.get(include=["metadatas"], limit=5000).get("metadatas") or []
+    files, languages, kinds, symbols = set(), {}, {}, 0
+    for meta in metadatas:
+        meta = meta or {}
+        files.add(meta.get("file_path", ""))
+        languages[meta.get("language", "unknown")] = languages.get(meta.get("language", "unknown"), 0) + 1
+        kinds[meta.get("kind", "unknown")] = kinds.get(meta.get("kind", "unknown"), 0) + 1
+        symbols += 1 if meta.get("symbol") else 0
+    collection_metadata = getattr(collection, "metadata", None) or {}
+    return {
+        "indexed": True,
+        "chunk_count": count,
+        "file_count": len(files - {""}),
+        "languages": dict(sorted(languages.items(), key=lambda item: -item[1])),
+        "kinds": dict(sorted(kinds.items(), key=lambda item: -item[1])[:10]),
+        "symbol_count": symbols,
+        "embedding_model": collection_metadata.get("embedding_model", DEFAULT_EMBEDDING_MODEL),
+    }

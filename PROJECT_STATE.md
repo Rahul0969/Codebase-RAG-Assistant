@@ -13,7 +13,7 @@
 10. C10 — Security, documentation, deployment and final frontend design
 
 ## Current commit
-C7 — Source citations and evidence validation delivered (builds on C6); local verification with real Ollama and Git commits for C6 and C7 pending. C4/C5 real-model verification still pending unless completed locally.
+C8 — MCP server and repository tools delivered (builds on C6 and C7); local verification with real Ollama and the real MCP SDK, plus Git commits for C6, C7 and C8, pending. C4/C5 real-model verification still pending unless completed locally.
 
 ## Completed
 - C1: project foundation.
@@ -38,6 +38,9 @@ C7 — Source citations and evidence validation delivered (builds on C6); local 
 - C7: evidence_validator.py: deterministic citation extraction ([path:start-end]) and validation against the line ranges shown to the model; coverage, uncited-statement and unsupported-identifier heuristics.
 - C7: system prompt now requires citations; /repository/ask adds citations, unsupported_citations, validation_passed, evidence_status (verified | partially_verified | invalid_citations | no_citations | insufficient_evidence), evidence_coverage, evidence_summary, retrieved_chunks; optional include_source_text.
 - C7: C6 status values retrieved/insufficient_context replaced by the list above; all other C6 fields kept.
+- C8: mcp_tools.py (five tool functions, input validation, safe errors, result caps) and mcp_server.py (FastMCP, stdio) with backend/run_mcp_server.py launcher; tools: inspect_repository, index_repository, search_code, ask_codebase, get_repository_summary.
+- C8: security.validate_repository_path (absolute, no link root, no filesystem/home/OS/credential folders, optional RAG_ALLOWED_ROOTS); used only by MCP tools, not by FastAPI endpoints.
+- C8: embedding_service.get_index_info (index statistics without loading the embedding model); requirements.txt adds mcp>=1.2,<2.0.
 
 ## Technology decisions
 - React + Vite frontend; keep minimal until backend is complete.
@@ -46,7 +49,7 @@ C7 — Source citations and evidence validation delivered (builds on C6); local 
 - Ollama local LLM (Qwen 2.5 planned for C6).
 - Chroma vector database.
 - Tree-sitter AST-aware chunking.
-- MCP server exposing repository tools.
+- MCP server exposing repository tools (stdio transport, local only).
 - Keras optional reranker only.
 - Ollama default model qwen2.5:3b (override with OLLAMA_MODEL; qwen2.5:1.5b for very low RAM). No new dependency in C6.
 - Free and local-first; no paid APIs.
@@ -54,6 +57,8 @@ C7 — Source citations and evidence validation delivered (builds on C6); local 
 - One commit at a time.
 
 ## Pending
+- Install `mcp` (pip install -r backend/requirements.txt), run tests, and try the server with MCP Inspector or a client; confirm tool schemas and call_tool behavior match the installed SDK version.
+- Decide in C9/C10 whether FastAPI endpoints should share the MCP path guard.
 - Verify with real qwen2.5:3b how often it follows the citation format; tune the prompt if needed.
 - Install Ollama, run `ollama pull qwen2.5:3b`, and verify GET /llm/status then POST /repository/ask on a small indexed repo.
 - Re-run POST /repository/index on existing indexes (line-number fix).
@@ -65,4 +70,4 @@ C7 — Source citations and evidence validation delivered (builds on C6); local 
 - Confirm C2/C3/C4 Git commits exist in order, then create the C5 Git commit.
 
 ## Last model + what it did
-Claude: added C7 (evidence validator, citation-aware prompt, extended /repository/ask response, tests, docs) on top of C6. 75 unit tests pass in a sandbox with fastapi/pydantic stand-in stubs (real FastAPI not run), mocked LLM, no Ollama/Chroma/embedding model. Citation quality of a real local model is unverified.
+Claude: added C8 (path guard, MCP tool layer, FastMCP stdio server, launcher, index info, tests, docs) after C6 and C7. 97 unit tests pass in a sandbox that had no fastapi, pydantic or mcp installed (small stand-in stubs used; the real SDKs were never run) and no Ollama/Chroma/embedding model. Server-registration tests are skipped if mcp is missing and have not run against the real SDK. The server has not been started or tested with a real MCP client.

@@ -55,3 +55,93 @@ def redact_secrets(text: str) -> str:
         lambda m: f"{m.group('prefix')}{m.group('quote')}{REDACTED}{m.group('quote')}", text
     )
     return text
+
+
+# ---------------------------------------------------------------------------
+# Repository path guard (used by the MCP server, whose caller is another program)
+# ---------------------------------------------------------------------------
+import os as _os
+from pathlib import Path as _Path
+
+_SENSITIVE_DIR_NAMES = {".ssh", ".aws", ".gnupg", ".kube", ".azure", ".docker", "appdata"}
+_POSIX_SYSTEM_DIRS = ("/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/var", "/proc",
+                      "/sys", "/dev", "/boot", "/root", "/run", "/snap")
+_WINDOWS_SYSTEM_ENV = ("SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData")
+
+
+class PathNotAllowedError(ValueError):
+    """The repository path is invalid or points to a protected location."""
+
+
+def _is_link(path: _Path) -> bool:
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or bool(is_junction and is_junction())
+
+
+def _inside(child: _Path, parent: _Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def validate_repository_path(repository_path: str) -> _Path:
+    """Return the resolved repository directory or raise PathNotAllowedError.
+
+    Rejects: relative paths, links as the root, missing paths, files, filesystem
+    roots, the user's home folder (or any folder containing it), operating-system
+    folders and credential folders such as .ssh or .aws. If RAG_ALLOWED_ROOTS is
+    set (folders separated by ';' on Windows, ':' elsewhere) the repository must
+    live inside one of them. Error messages never include the supplied path.
+    """
+    if not isinstance(repository_path, str) or not repository_path.strip():
+        raise PathNotAllowedError("repository_path must not be empty.")
+    if len(repository_path) > 4096 or "\x00" in repository_path:
+        raise PathNotAllowedError("repository_path is not a valid path.")
+    requested = _Path(repository_path.strip()).expanduser()
+    if not requested.is_absolute():
+        raise PathNotAllowedError("repository_path must be an absolute path.")
+    if not requested.exists():
+        raise PathNotAllowedError("repository_path does not exist.")
+    if not requested.is_dir():
+        raise PathNotAllowedError("repository_path must be a directory.")
+    if _is_link(requested):
+        raise PathNotAllowedError("A symbolic link or junction cannot be the repository root.")
+    try:
+        resolved = requested.resolve(strict=True)
+    except OSError:
+        raise PathNotAllowedError("repository_path could not be resolved.") from None
+
+    if resolved.parent == resolved:
+        raise PathNotAllowedError("A filesystem root cannot be used as a repository.")
+    try:
+        home = _Path.home().resolve()
+    except (RuntimeError, OSError):
+        home = None
+    if home is not None and _inside(home, resolved):
+        raise PathNotAllowedError("Your home folder (or a folder containing it) cannot be used as a repository.")
+
+    protected = [_Path(p) for p in _POSIX_SYSTEM_DIRS]
+    protected += [_Path(_os.environ[name]) for name in _WINDOWS_SYSTEM_ENV if _os.environ.get(name)]
+    for folder in protected:
+        try:
+            folder = folder.resolve()
+        except OSError:
+            continue
+        if _inside(resolved, folder):
+            raise PathNotAllowedError("Operating-system folders cannot be used as a repository.")
+    if any(part.lower() in _SENSITIVE_DIR_NAMES for part in resolved.parts):
+        raise PathNotAllowedError("Credential and application-data folders cannot be used as a repository.")
+
+    allowed = [p for p in (_os.environ.get("RAG_ALLOWED_ROOTS") or "").split(_os.pathsep) if p.strip()]
+    if allowed:
+        roots = []
+        for item in allowed:
+            try:
+                roots.append(_Path(item).expanduser().resolve())
+            except OSError:
+                continue
+        if not any(_inside(resolved, root) for root in roots):
+            raise PathNotAllowedError("repository_path is outside the folders allowed by RAG_ALLOWED_ROOTS.")
+    return resolved

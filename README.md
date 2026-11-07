@@ -11,7 +11,8 @@ A free, local-first assistant for exploring repositories, searching code by mean
 - **C5:** semantic code search over indexed chunks, returning source paths, line ranges and similarity scores.
 - **C6:** Ollama-powered RAG: `POST /repository/ask` retrieves code and answers with a local Qwen 2.5 model.
 - **C7:** answers carry `[path:start-end]` citations that are checked against the code actually retrieved.
-- Not implemented yet: MCP.
+- **C8:** local MCP server (stdio) with five repository tools for MCP-compatible clients.
+- Not implemented yet: end-to-end integration tests (C9), final frontend and hardening (C10).
 
 ## Prerequisites
 
@@ -119,7 +120,7 @@ The tests use Python's built-in `unittest` and do not require an additional test
 5. Semantic code search
 6. Ollama-powered RAG (implemented)
 7. Source citations and evidence validation (implemented)
-8. MCP server and repository tools
+8. MCP server and repository tools (implemented)
 9. API integration and end-to-end testing
 10. Security, documentation, and final frontend design
 
@@ -257,3 +258,60 @@ Optional request field `include_source_text` (default `false`) adds the code tex
 **What this does not prove:** a valid citation means the file and lines were really retrieved. It does not prove the sentence next to it is true, and the uncited-statement and identifier checks are heuristics. Small local models sometimes cite loosely or skip citations; the status tells you when that happened. Invalid citations are never hidden or silently corrected.
 
 **Tests:** `python -m unittest discover -s tests -v`. LLM output is mocked.
+
+
+### MCP server and repository tools (C8)
+
+MCP (Model Context Protocol) lets an AI app such as Claude Desktop call tools on your computer. C8 exposes the assistant as one local MCP server over **stdio**: the client starts the server as a child process and talks to it through standard input/output. No network port is opened, so nothing is reachable from outside your PC. The server reuses the existing services (inspection, chunking, indexing, search, RAG); it does not duplicate them.
+
+**Install and check (PowerShell, from the repository root):**
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt   # adds the 'mcp' package
+.\.venv\Scripts\python.exe run_mcp_server.py
+```
+
+If it works, the command just waits silently for a client (press Ctrl+C to stop). Do not type into it. Optional visual test with Node.js installed: `npx @modelcontextprotocol/inspector .\.venv\Scripts\python.exe run_mcp_server.py`.
+
+**Connect a client.** Most desktop clients take a JSON entry like this (use your real absolute paths; in Claude Desktop the file is `%APPDATA%\Claude\claude_desktop_config.json`; restart the app afterwards):
+
+```json
+{
+  "mcpServers": {
+    "codebase-rag-assistant": {
+      "command": "C:\\path\\to\\codebase-rag-assistant\\backend\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\path\\to\\codebase-rag-assistant\\backend\\run_mcp_server.py"],
+      "env": {
+        "OLLAMA_MODEL": "qwen2.5:3b",
+        "RAG_ALLOWED_ROOTS": "C:\\Users\\YourUser\\Desktop"
+      }
+    }
+  }
+}
+```
+
+**Tools**
+
+| Tool | Inputs | What it does |
+|---|---|---|
+| `inspect_repository` | `repository_path` | lists supported source files (paths only), counts by file type |
+| `index_repository` | `repository_path`, `max_chars` (500-12000, default 6000), `batch_size` (1-32, default 8) | chunks, embeds and stores the repo in local ChromaDB |
+| `search_code` | `repository_path`, `query`, `top_k` (1-20, default 5) | semantic search; returns code, symbol, line range, `file:start-end` citation, similarity |
+| `ask_codebase` | `repository_path`, `question`, `top_k` (1-10, default 5) | local Qwen answer with checked citations and `evidence_status` |
+| `get_repository_summary` | `repository_path` | facts only: counts by type, top-level folders, notable files by name, index statistics |
+
+Typical order: `inspect_repository`, `index_repository` (again after code changes), then `search_code` / `ask_codebase`. `repository_path` must be an absolute path. Tools return errors with short, safe messages (no stack traces or file contents from outside the repository).
+
+**Security and the trust boundary**
+
+- The *client you configure* is trusted to call these five tools. The server is not meant to be exposed to other computers or the internet; do not wrap it in a network proxy.
+- No tool runs shell commands or accepts commands as arguments; repository code is never executed; repository text (comments, README) is never treated as instructions.
+- Paths are validated before any work: absolute only; links/junctions as the root, filesystem roots, your home folder (or a folder containing it), operating-system folders and credential/app-data folders (`.ssh`, `.aws`, `.gnupg`, `.kube`, `.azure`, `.docker`, `AppData`) are refused. The existing C2 rules (skip secrets files, `.env*`, keys, dependency/build folders, symlinks) still apply.
+- Optional extra lock: set `RAG_ALLOWED_ROOTS` (folders separated by `;` on Windows) and only repositories inside those folders are accepted.
+- Likely secrets in returned code are masked (best effort). Chroma's anonymous telemetry is switched off for the server process.
+- The same path rules are **not** applied to the FastAPI endpoints (they are for your own browser/Swagger use on localhost). Keep that API bound to 127.0.0.1.
+
+**Practical limits (4 GB RAM machines):** the first `index_repository` run downloads the embedding model and large repositories can exceed a client's tool timeout (often 60 seconds); index through `POST /repository/index` in Swagger instead if that happens, then use the MCP tools. `ask_codebase` can take up to `OLLAMA_TIMEOUT` seconds (default 120). Logs go to the terminal's stderr, because stdout carries the protocol.
+
+**Tests:** `python -m unittest discover -s tests -v`. Tool logic is tested with mocks (no Ollama or model download). The server-registration tests are skipped automatically if the `mcp` package is not installed.
