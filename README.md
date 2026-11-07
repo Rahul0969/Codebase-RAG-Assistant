@@ -120,6 +120,4 @@ docs/               SECURITY.md, DEPLOYMENT.md
 setup.bat, start.bat, start-backend.bat, start-frontend.bat
 ```
 
-## Status
 
-All ten roadmap commits (C1-C10) are implemented. See `PROJECT_STATE.md` for what has been verified and what still needs checking on your machine. Known limits: no real indexing progress, no browser-level UI tests, answer quality depends on the small local model, and secret masking is best-effort.
