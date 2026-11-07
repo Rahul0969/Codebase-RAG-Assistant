@@ -10,7 +10,8 @@ A free, local-first assistant for exploring repositories, searching code by mean
 - **C4:** local sentence-transformers embeddings and persistent Chroma indexing.
 - **C5:** semantic code search over indexed chunks, returning source paths, line ranges and similarity scores.
 - **C6:** Ollama-powered RAG: `POST /repository/ask` retrieves code and answers with a local Qwen 2.5 model.
-- Not implemented yet: citation validation and MCP.
+- **C7:** answers carry `[path:start-end]` citations that are checked against the code actually retrieved.
+- Not implemented yet: MCP.
 
 ## Prerequisites
 
@@ -117,7 +118,7 @@ The tests use Python's built-in `unittest` and do not require an additional test
 4. Sentence-transformers embeddings and Chroma indexing
 5. Semantic code search
 6. Ollama-powered RAG (implemented)
-7. Source citations and evidence validation
+7. Source citations and evidence validation (implemented)
 8. MCP server and repository tools
 9. API integration and end-to-end testing
 10. Security, documentation, and final frontend design
@@ -224,3 +225,35 @@ Set one in PowerShell like this: `$env:OLLAMA_MODEL = "qwen2.5:1.5b"` (applies t
 - Stale-chunk cleanup no longer rebuilds a set on every loop iteration.
 
 **Run the tests:** `python -m unittest discover -s tests -v`. All Ollama tests use mocks; no model download is needed. An optional real check is `GET /llm/status` followed by one `POST /repository/ask` on a small indexed project.
+
+
+### Source citations and evidence checks (C7)
+
+`POST /repository/ask` now asks the model to cite its sources like `[src/auth.py:15-32]` (the path and line numbers come from the numbered code it was shown). After the model answers, `backend/app/evidence_validator.py` checks every citation with plain deterministic rules:
+
+1. Was that file among the chunks retrieved for this question?
+2. Is the line range valid (starts at 1 or later, end not before start)?
+3. Is the range inside lines the model was actually shown (adjacent chunks of one file are merged)?
+
+It also reports which retrieved sources were cited, which sentences have no citation, and which `identifiers` written in backticks never appear in the retrieved code.
+
+**New response fields** (all C6 fields are kept):
+
+| Field | Meaning |
+|---|---|
+| `citations` | every citation found: `text`, `file_path`, `start_line`, `end_line`, `valid`, `reason`, `source_id` |
+| `unsupported_citations` | the invalid ones (`file_not_retrieved`, `invalid_line_range`, `lines_outside_retrieved_range`) |
+| `validation_passed` | true only if there is at least one citation and all are valid |
+| `evidence_status` | see below |
+| `evidence_coverage` | sources cited vs retrieved, cited vs uncited statements, examples of uncited statements |
+| `unsupported_identifiers` | backticked names not found in the retrieved code |
+| `evidence_summary` | one-sentence explanation |
+| `retrieved_chunks` | every chunk shown to the model, with line ranges and `cited` flag |
+
+Optional request field `include_source_text` (default `false`) adds the code text (secrets masked) to each item in `retrieved_chunks`.
+
+**`evidence_status` values:** `verified` (all citations valid and every statement cited), `partially_verified` (citations valid, but some statements are uncited or some names are not in the code), `invalid_citations` (at least one citation does not match retrieved code: do not trust it), `no_citations`, and `insufficient_evidence` (nothing relevant retrieved, so the model is not called, or the model says it cannot tell). C6 used `retrieved` / `insufficient_context`; those are replaced by this list. `success` still means "an answer was generated from retrieved code".
+
+**What this does not prove:** a valid citation means the file and lines were really retrieved. It does not prove the sentence next to it is true, and the uncited-statement and identifier checks are heuristics. Small local models sometimes cite loosely or skip citations; the status tells you when that happened. Invalid citations are never hidden or silently corrected.
+
+**Tests:** `python -m unittest discover -s tests -v`. LLM output is mocked.

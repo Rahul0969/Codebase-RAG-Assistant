@@ -13,7 +13,7 @@
 10. C10 — Security, documentation, deployment and final frontend design
 
 ## Current commit
-C6 — Ollama-powered RAG delivered; local verification with real Ollama and Git commit pending. C4/C5 real-model verification still pending unless completed locally.
+C7 — Source citations and evidence validation delivered (builds on C6); local verification with real Ollama and Git commits for C6 and C7 pending. C4/C5 real-model verification still pending unless completed locally.
 
 ## Completed
 - C1: project foundation.
@@ -35,6 +35,9 @@ C6 — Ollama-powered RAG delivered; local verification with real Ollama and Git
 - C6: POST /repository/ask and GET /llm/status; AskResponse models; status codes 400/422/502/503/504.
 - C6 fix: chunker line ranges were wrong when a chunk started with blank lines; trimmed lines now move start/end together. Existing indexes need one re-index.
 - C6 fix: sensitive-name skip now also matches names with extensions (secrets.py, credentials.json) and .npmrc/.pypirc/.netrc.
+- C7: evidence_validator.py: deterministic citation extraction ([path:start-end]) and validation against the line ranges shown to the model; coverage, uncited-statement and unsupported-identifier heuristics.
+- C7: system prompt now requires citations; /repository/ask adds citations, unsupported_citations, validation_passed, evidence_status (verified | partially_verified | invalid_citations | no_citations | insufficient_evidence), evidence_coverage, evidence_summary, retrieved_chunks; optional include_source_text.
+- C7: C6 status values retrieved/insufficient_context replaced by the list above; all other C6 fields kept.
 
 ## Technology decisions
 - React + Vite frontend; keep minimal until backend is complete.
@@ -51,6 +54,7 @@ C6 — Ollama-powered RAG delivered; local verification with real Ollama and Git
 - One commit at a time.
 
 ## Pending
+- Verify with real qwen2.5:3b how often it follows the citation format; tune the prompt if needed.
 - Install Ollama, run `ollama pull qwen2.5:3b`, and verify GET /llm/status then POST /repository/ask on a small indexed repo.
 - Re-run POST /repository/index on existing indexes (line-number fix).
 - Install updated dependencies on Windows.
@@ -61,4 +65,4 @@ C6 — Ollama-powered RAG delivered; local verification with real Ollama and Git
 - Confirm C2/C3/C4 Git commits exist in order, then create the C5 Git commit.
 
 ## Last model + what it did
-Claude: inspected the C5 ZIP, fixed the chunker line-range bug and wider sensitive-name matching, added C6 (Ollama client, RAG service, /repository/ask, /llm/status, tests, docs). 54 unit tests pass in a sandbox that lacked fastapi/pydantic (small stand-in stubs used, real FastAPI not run) and had no Ollama, ChromaDB or embedding model. Real Ollama, Chroma and FastAPI behavior must be verified on the user's machine.
+Claude: added C7 (evidence validator, citation-aware prompt, extended /repository/ask response, tests, docs) on top of C6. 75 unit tests pass in a sandbox with fastapi/pydantic stand-in stubs (real FastAPI not run), mocked LLM, no Ollama/Chroma/embedding model. Citation quality of a real local model is unverified.

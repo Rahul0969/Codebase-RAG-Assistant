@@ -119,10 +119,37 @@ class SourceInfo(BaseModel):
     similarity: float
 
 
+class Citation(BaseModel):
+    text: str
+    file_path: str
+    start_line: int
+    end_line: int
+    valid: bool
+    reason: str
+    source_id: int | None = None
+
+
+class RetrievedChunk(SourceInfo):
+    context_start_line: int
+    context_end_line: int
+    cited: bool
+    content: str | None = None
+
+
+class EvidenceCoverage(BaseModel):
+    retrieved_sources: int
+    sources_cited: int
+    cited_source_ids: list[int]
+    claim_sentences: int
+    cited_claim_sentences: int
+    uncited_claim_examples: list[str]
+
+
 class AskRequest(BaseModel):
     repository_path: str = Field(min_length=1, max_length=4096)
     question: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=ASK_DEFAULT_TOP_K, ge=1, le=ASK_MAX_TOP_K)
+    include_source_text: bool = False
 
 
 class AskResponse(BaseModel):
@@ -138,6 +165,13 @@ class AskResponse(BaseModel):
     context_chars: int
     context_truncated: bool
     embedding_model: str
+    validation_passed: bool
+    citations: list[Citation]
+    unsupported_citations: list[Citation]
+    unsupported_identifiers: list[str]
+    evidence_coverage: EvidenceCoverage
+    evidence_summary: str
+    retrieved_chunks: list[RetrievedChunk]
 
 
 def _llm_http_error(error: LLMError) -> HTTPException:
@@ -153,7 +187,10 @@ def _llm_http_error(error: LLMError) -> HTTPException:
 def ask_repository_endpoint(request: AskRequest) -> dict:
     """Answer a question about an indexed repository using retrieved code and a local LLM."""
     try:
-        return ask_repository(request.repository_path, request.question, top_k=request.top_k)
+        return ask_repository(
+            request.repository_path, request.question, top_k=request.top_k,
+            include_source_text=request.include_source_text,
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except LLMError as error:

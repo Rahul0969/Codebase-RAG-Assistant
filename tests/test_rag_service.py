@@ -66,7 +66,8 @@ class TestAskRepository(unittest.TestCase):
                    return_value={"text": "login checks the user.", "model": "qwen2.5:3b"}) as chat:
             result = ask_repository("C:/repo", "  Where is login?  ", top_k=3)
         self.assertTrue(result["success"])
-        self.assertEqual(result["evidence_status"], "retrieved")
+        self.assertEqual(result["evidence_status"], "no_citations")  # answer cited nothing
+        self.assertFalse(result["validation_passed"])
         self.assertEqual(result["answer"], "login checks the user.")
         self.assertEqual(result["sources"][0]["file_path"], "src/auth.py")
         self.assertEqual(result["used_chunk_count"], 1)
@@ -79,7 +80,7 @@ class TestAskRepository(unittest.TestCase):
             result = ask_repository("C:/repo", "Where is login?")
         chat.assert_not_called()
         self.assertFalse(result["success"])
-        self.assertEqual(result["evidence_status"], "insufficient_context")
+        self.assertEqual(result["evidence_status"], "insufficient_evidence")
         self.assertEqual(result["answer"], INSUFFICIENT_ANSWER)
 
     def test_invalid_inputs(self):
@@ -102,7 +103,7 @@ class TestAskEndpoint(unittest.TestCase):
         expected = {"answer": "ok"}
         with patch("backend.app.main.ask_repository", return_value=expected) as mocked:
             self.assertEqual(ask_repository_endpoint(self.request()), expected)
-        mocked.assert_called_once_with("C:/repo", "Where is login?", top_k=4)
+        mocked.assert_called_once_with("C:/repo", "Where is login?", top_k=4, include_source_text=False)
 
     def test_error_mapping(self):
         cases = [(ValueError("bad"), 400), (OllamaUnavailableError("down"), 503),
