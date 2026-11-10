@@ -190,6 +190,13 @@ class TestWorkflow(WorkflowCase):
                                               if c["file_path"] == "auth.py"))
         self.assertEqual(result["model"], "qwen2.5:3b")
 
+    def test_change_impact_endpoint_finds_dependents(self):
+        (self.repo / "consumer.py").write_text("import auth\n", encoding="utf-8")
+        result = main.repository_impact_endpoint(main.ImpactRequest(
+            repository_path=self.repo_path, changed_files=["auth.py"]))
+        self.assertIn("consumer.py", result["direct_dependents"])
+        self.assertEqual(result["analysis_kind"], "static_import_graph")
+
     def test_invalid_citation_status_propagates(self):
         self.index()
         result = self.ask("How does authenticate user check the password?",
@@ -281,7 +288,7 @@ class TestHttpLayer(unittest.TestCase):
         expected = {"/health", "/repository/inspect", "/repository/chunk", "/repository/index",
                     "/repository/status", "/repository/search", "/repository/ask", "/llm/status",
                     "/api/reports/generate", "/api/reports", "/api/reports/{report_id}",
-                    "/api/reports/{report_id}/download"}
+                    "/api/reports/{report_id}/download", "/repository/impact"}
         self.assertTrue(expected <= paths)
 
     def test_health_shape(self):

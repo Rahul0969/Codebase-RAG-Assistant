@@ -4,6 +4,7 @@ This module lists source-file paths only. It does not open or execute files.
 """
 
 import os
+import re
 from pathlib import Path
 
 IGNORED_DIRS = {
@@ -45,6 +46,12 @@ SENSITIVE_NAMES = {
     "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "credentials", "secrets",
     ".npmrc", ".pypirc", ".netrc", ".htpasswd",
 }
+SENSITIVE_DIRS = {".ssh", ".aws", ".gnupg", ".kube", ".azure", ".docker", "secrets", ".secrets"}
+SENSITIVE_NAME_PATTERNS = (
+    re.compile(r"^client[_-]?secrets?(?:[_.-].*)?\.(?:json|ya?ml)$"),
+    re.compile(r"^service[_-]?account.*\.json$"),
+    re.compile(r"^(?:terraform|secrets?)\.tfvars(?:\.json)?$"),
+)
 MAX_FILES = 5000
 MAX_DEPTH = 20
 
@@ -108,6 +115,7 @@ def inspect_repository(repository_path: str) -> dict:
             name
             for name in directories
             if name not in IGNORED_DIRS
+            and name.lower() not in SENSITIVE_DIRS
             and not (current / name).is_symlink()
             and not _is_junction(current / name)
         )
@@ -127,6 +135,8 @@ def inspect_repository(repository_path: str) -> dict:
             if lower_name in SENSITIVE_NAMES or Path(lower_name).stem in SENSITIVE_NAMES:
                 continue
             if suffix in SENSITIVE_SUFFIXES:
+                continue
+            if any(pattern.match(lower_name) for pattern in SENSITIVE_NAME_PATTERNS):
                 continue
             if suffix not in SUPPORTED_EXTENSIONS:
                 continue

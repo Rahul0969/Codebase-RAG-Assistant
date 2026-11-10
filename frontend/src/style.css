@@ -154,3 +154,25 @@ input[aria-invalid="true"] { border-color: var(--bad); }
 .report-history { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
 .report-history li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; }
 .report-history li > div { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+
+/* C12 change-impact analysis */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 18px 0; }
+.stats-grid .stat { display: flex; flex-direction: column; gap: 5px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: rgba(18, 36, 67, .55); }
+.stats-grid .stat strong { color: var(--text); font-size: 1.55rem; }
+.stats-grid .stat span { color: var(--muted); font-size: .82rem; }
+.impact-list ul { margin: 10px 0 0; padding-left: 22px; }
+.impact-list li { margin: 7px 0; overflow-wrap: anywhere; }
+.notice { padding: 10px 12px; border: 1px solid rgba(245, 184, 76, .35); border-radius: 9px; color: #f4ca80; background: rgba(111, 75, 17, .16); }
+
+.impact-input { display: block; width: 100%; min-height: 120px; resize: vertical; margin-top: 6px; padding: 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: #060d1d; color: var(--text); font: .9rem/1.55 var(--mono); }
+
+/* C12 refinement: confirmed vs. guessed results */
+.impact-confirmed { border-left: 3px solid #4f9dff; }
+.impact-guess { border-left: 3px dashed rgba(245, 184, 76, .7); }
+.impact-list > p.muted { margin: 4px 0 0; font-size: .86rem; }
+.badge-guess { color: #f4ca80; font-size: .76rem; margin-left: 6px; }
+.impact-edges { padding-left: 22px; max-height: 360px; overflow: auto; }
+.impact-edges li { margin: 5px 0; overflow-wrap: anywhere; }
+.notice ul { margin: 8px 0 0; padding-left: 20px; overflow-wrap: anywhere; }
+details > summary { cursor: pointer; margin-top: 10px; }
+details > summary:focus-visible, .impact-input:focus-visible { outline: 2px solid #69a7ff; outline-offset: 2px; }

@@ -21,23 +21,54 @@ _TOKEN_PATTERNS = [
     re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),           # Slack tokens
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),                  # generic "sk-" API keys
     re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),  # JWT
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{40,}\b"),          # GitHub fine-grained token
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),                 # Google API key
+    re.compile(r"\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}\b"),  # Stripe secret/restricted keys
+    re.compile(r"\bnpm_[A-Za-z0-9]{36}\b"),                   # npm token
+    re.compile(r"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"),  # SendGrid
 ]
 
-# name = "value"  /  name: 'value'  where the name looks secret.
+_SECRET_NAME = r"(?:api[_-]?key|secret|token|passw(?:or)?d|pwd|private[_-]?key|access[_-]?key)"
+
+# name = "value"  /  name: 'value'  /  "name": "value" (JSON)  where the name looks secret.
 _ASSIGNMENT = re.compile(
     r"""(?ix)
-    (?P<prefix>\b[\w.-]*(?:api[_-]?key|secret|token|passw(?:or)?d|pwd|private[_-]?key|access[_-]?key)[\w.-]*
-        \s*[:=]\s*)
-    (?P<quote>['"])
+    (?P<prefix>\b[\w.-]*""" + _SECRET_NAME + r"""[\w.-]*
+        (?:\\?['"])?\s*[:=]\s*)
+    (?P<quote>\\?['"])
     (?P<value>[^'"\r\n]{6,})
     (?P=quote)
     """
 )
 
+# Unquoted values: YAML "key: value", .env / shell / .properties "KEY=value", batch "set KEY=value".
+# Deliberately strict so ordinary code such as `token = get_token(x)` is left alone.
+_UNQUOTED = re.compile(
+    r"""(?imx)
+    ^(?P<prefix>[ \t]*(?:-[ \t]+)?(?:export[ \t]+|set[ \t]+)?[\w.-]*""" + _SECRET_NAME + r"""[\w.-]*
+        (?::[ \t]+|=))
+    (?P<value>[^\s'"$%\#{}\[\]()<>,;`][^\s'"{}\[\]()<>,;`\#]{5,})
+    [ \t]*(?:\#.*)?$
+    """
+)
+
+# scheme://user:password@host
+_URL_CREDENTIALS = re.compile(r"(?P<head>\b[a-z][a-z0-9+.-]*://[^\s:/@'\"]+:)(?P<pw>[^\s@/'\"]+)(?P<tail>@)", re.I)
+_BEARER = re.compile(r"(?P<head>\bBearer\s+)(?P<tok>[A-Za-z0-9._~+/=-]{16,})", re.I)
+
 
 def _redact_private_key(match: re.Match) -> str:
     # Keep the same number of lines so cited line ranges still line up.
     return "[REDACTED PRIVATE KEY]" + "\n" * match.group(0).count("\n")
+
+
+def _redact_unquoted(match: re.Match) -> str:
+    value = match.group("value")
+    # Real secrets nearly always contain a digit or a separator; plain words
+    # (type names such as SecretStr, identifiers) are left alone.
+    if value == REDACTED or not re.search(r"[0-9_/+=-]", value):
+        return match.group(0)
+    return f"{match.group('prefix')}{REDACTED}"
 
 
 def redact_secrets(text: str) -> str:
@@ -54,6 +85,9 @@ def redact_secrets(text: str) -> str:
     text = _ASSIGNMENT.sub(
         lambda m: f"{m.group('prefix')}{m.group('quote')}{REDACTED}{m.group('quote')}", text
     )
+    text = _UNQUOTED.sub(_redact_unquoted, text)
+    text = _URL_CREDENTIALS.sub(lambda m: f"{m.group('head')}{REDACTED}{m.group('tail')}", text)
+    text = _BEARER.sub(lambda m: f"{m.group('head')}{REDACTED}", text)
     return text
 
 

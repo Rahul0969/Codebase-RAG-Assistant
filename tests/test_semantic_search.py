@@ -63,6 +63,27 @@ class TestSemanticSearch(unittest.TestCase):
             self.assertAlmostEqual(result["matches"][0]["similarity"], 0.88)
             self.assertEqual(collection.query_args["n_results"], 1)  # capped at indexed collection size
 
+    def test_search_redacts_secrets_before_returning_source_to_client(self):
+        with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as db:
+            collection = FakeCollection()
+            collection.query = lambda **kwargs: {
+                "ids": [["chunk-1"]],
+                "documents": [["API_TOKEN = 'ghp_" + "A" * 36 + "\'\n"]],
+                "metadatas": [[{"file_path": "settings.py", "language": "python", "kind": "module",
+                                 "symbol": None, "start_line": 1, "end_line": 1, "parse_has_error": False}]],
+                "distances": [[0.1]],
+            }
+            fake_chroma = type("FakeChroma", (), {
+                "PersistentClient": lambda **kwargs: FakeClient(collection)
+            })
+            with patch("backend.app.embedding_service.DEFAULT_PERSIST_DIRECTORY", Path(db)), \
+                 patch.dict("sys.modules", {"chromadb": fake_chroma}), \
+                 patch("backend.app.embedding_service._load_embedding_model", return_value=FakeModel()):
+                result = search_repository(repo, "find API token")
+            content = result["matches"][0]["content"]
+            self.assertIn("[REDACTED]", content)
+            self.assertNotIn("ghp_", content)
+
     def test_empty_collection_returns_no_matches_without_loading_model(self):
         with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as db:
             fake_chroma = type("FakeChroma", (), {

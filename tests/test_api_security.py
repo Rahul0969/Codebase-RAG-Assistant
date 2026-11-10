@@ -211,6 +211,8 @@ class TestApiPathGuard(unittest.TestCase):
                 main.SearchRequest(repository_path=risky, query="x")),
             "ask_repository": lambda: main.ask_repository_endpoint(
                 main.AskRequest(repository_path=risky, question="x")),
+            "analyze_change_impact": lambda: main.repository_impact_endpoint(
+                main.ImpactRequest(repository_path=risky, changed_files=["main.py"])),
         }
         for service, call in calls.items():
             with patch(f"backend.app.main.{service}") as mocked:

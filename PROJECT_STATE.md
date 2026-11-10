@@ -12,9 +12,10 @@
 9. C9 — API integration and end-to-end testing
 10. C10 — Security, documentation, deployment and final frontend design
 11. C11 — AI-powered repository report generation
+12. C12 — Code change impact analysis
 
 ## Current commit
-C11 — AI-powered repository report generation delivered (builds on C10). Git commit history and real-machine verification remain pending where noted below.
+C12 — Code change impact analysis delivered; existing C1–C11 refinements included. Git commit history and real-machine verification remain pending where noted below.
 
 ## Completed
 - C1: project foundation.
@@ -116,6 +117,17 @@ Claude: delivered C10. Backend: 138 tests pass in a sandbox with stand-in stubs 
 - Real Ollama executive-summary generation: not tested; deterministic fallback was tested.
 - Windows setup/start scripts, real browser UI and Vercel deployment: not tested.
 
+## C12 refinement pass (2026-11-10)
+
+- `impact_service.py` reworked in place (same endpoint, same earlier response fields): confirmed vs. inferred edges, deduplicated unresolved references with reasons, side-effect/comment-aware JS parsing, Java matching by declared package (Maven/Gradle layouts), Python source-root inference (labelled inferred), real cycle members (iterative Tarjan), skipped-file reporting, time/file/byte limits via `RAG_IMPACT_*`, dot-folder and Windows path handling.
+- Behaviour change: `related_tests` now lists only import-confirmed tests; name-only matches moved to `likely_related_tests`.
+- `security.py`: redaction now covers JSON keys, unquoted YAML/env/properties/batch values, URL credentials, bearer tokens and more token formats (line counts preserved; ordinary code left untouched).
+- `repository.py`: secret folders and `client_secret*`/`service-account*` JSON files are excluded from scanning and indexing.
+- `embedding_service.py`: cached embedding model and Chroma client, one indexing job at a time, streamed upserts, batched stale deletes, complete index statistics.
+- `main.py`: each changed-file path in `/repository/impact` is length-validated.
+- Frontend: Change Impact page separates confirmed from possible results and shows cycles, skipped files, unresolved references and unmapped aliases.
+- New tests: 27 impact edge-case tests and 12 refinement tests (see `docs/TEST_RESULTS_C12.md`).
+
 ## Remaining verification
 
 - On Windows, run `setup.bat`, then `start.bat`; open Reports and generate each of the three formats.
@@ -124,3 +136,41 @@ Claude: delivered C10. Backend: 138 tests pass in a sandbox with stand-in stubs 
 - Install the MCP dependency and run the four MCP SDK tests (they are skipped in this environment).
 - Verify the downloaded report files open correctly in a browser/editor and do not include excluded secret files.
 - Verify the hosted Vercel page can connect to the local backend in supported browsers, if deployment is desired.
+
+
+## Existing-commit refinements included with C12 (2026-11-09)
+
+- C5 security refinement: semantic search results now pass through the shared best-effort secret redactor before source snippets are returned to browser/API clients. This also protects the RAG retrieval path; secret masking remains best-effort, not a guarantee.
+- C10/C12 security refinement: the new impact endpoint uses the same `_safe_repo` path guard as the other repository endpoints. Changed file paths must be repository-relative, cannot traverse outside the repository, and must match an inspected file.
+- C11 documentation and report feature descriptions reviewed and linked from the README.
+- Updated architecture documentation to include the impact-analysis service.
+
+## Commit 12 — Code Change Impact Analysis
+
+- Added `backend/app/impact_service.py` for bounded static import graph analysis without executing repository code.
+- Supports Python imports, JavaScript/TypeScript import/export-from/require/literal dynamic import patterns, and Java package imports that resolve to local files.
+- Reports changed files, direct dependents, transitive dependents, all affected files, likely related tests, dependency edges, unresolved local references, possible cycles, truncation and analysis limitations.
+- Validates changed file paths against safe repository inspection; caps at 20 changed files, 2,500 analyzed files, 512 KB per file, 8 MB total reads and 500 returned dependency edges. User-selected changed files are prioritized within the analysis cap.
+- Added `POST /repository/impact` with request validation and the standard repository path guard.
+- Added a Change Impact frontend page and navigation entry with input validation, progress/error states, impact counts, affected file lists, dependency edges and limitations.
+- Added `docs/C12_CHANGE_IMPACT.md`, updated README and architecture diagram.
+- Added unit, API route, security-guard and frontend API-client tests.
+
+## C12 and refinement verification in authoring environment (2026-11-09)
+
+- Python compileall: passed.
+- Backend suite: 157 passed, 0 failed, 4 skipped (MCP SDK dependency unavailable in this environment).
+- Frontend Node tests: 26 passed, 0 failed.
+- Vite production build: not run because Vite dependencies are not installed in this environment.
+- Real Tree-sitter model/indexing, Ollama inference, Windows scripts, browser rendering and Vercel deployment: not verified here.
+
+## Remaining verification
+
+- On Windows, run `setup.bat`, then `start.bat`; inspect a small repository and test inspect/index/search/ask.
+- Open Change Impact, enter a real changed file path, and confirm the direct/transitive dependency results and related test suggestions against the repository.
+- Generate Markdown, HTML and JSON reports and open each downloaded file.
+- Install/run frontend dependencies: `npm install`, `npm test`, `npm run build` from `frontend`.
+- Install the MCP SDK and run the four skipped MCP SDK tests; test MCP tools with a real MCP client.
+- Verify actual embedding model inference, Chroma persistence and Ollama response behavior.
+- Verify browser-to-localhost permissions and optional Vercel deployment.
+- Create Git commits C6–C12 in order if the existing Git history does not already contain them; do not represent a combined ZIP as seven historical commits.

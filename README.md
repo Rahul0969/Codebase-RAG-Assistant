@@ -34,6 +34,7 @@ An MCP server (stdio) exposes the same capabilities to MCP-compatible tools.
 3. **Code Search:** describe what you want; results show file, symbol, language, line range, a similarity score and the code.
 4. **Ask Codebase:** ask a question. Each answer shows an evidence status, clickable citations that reveal the cited code, the model used and how many chunks were retrieved.
 5. **Reports:** generate a repository intelligence report in Markdown, HTML or JSON. The report includes file statistics, detected languages, dependency manifests, architecture candidates, important files, conservative security pattern matches and limitations. Ollama can optionally write the executive summary; deterministic reporting still works when Ollama is unavailable.
+6. **Change Impact:** enter changed repository-relative file paths (one per line) to find likely direct and transitive dependents, related tests and local import relationships. This is bounded static import analysis; dynamic imports, runtime call paths and framework aliases may not be detected.
 
 **Evidence status** (never green unless the check passed): *Citations verified*, *Partly verified*, *Citation check failed*, *No citations*, *Insufficient evidence*. A verified status means the cited lines were really retrieved, not that every sentence is correct. Read the cited code.
 
@@ -65,6 +66,7 @@ The backend listens on 127.0.0.1 only, rejects requests whose `Host` is not loca
 | `GET /api/reports` | list generated report metadata |
 | `GET /api/reports/{report_id}` | retrieve generated report content |
 | `GET /api/reports/{report_id}/download` | download a generated report |
+| `POST /repository/impact` | find direct/transitive dependents and related tests for changed files (`changed_files`: 1-20 relative paths) |
 
 Interactive docs: http://127.0.0.1:8000/docs. Errors carry a readable `detail` and an `X-Error-Code` header (`invalid_request`, `repository_path_invalid`, `not_indexed`, `ollama_unavailable`, `model_not_found`, `llm_timeout`, `llm_bad_response`, `llm_config_invalid`, `service_unavailable`, `host_not_allowed`, `origin_not_allowed`). Status codes: 400 bad input/not indexed, 403 untrusted origin, 422 invalid body, 502 bad model reply, 503 service unavailable, 504 timeout.
 
@@ -117,7 +119,7 @@ Backend tests use mocks for Ollama, the embedding model and ChromaDB; no model d
 
 ```
 backend/app/        FastAPI app, repository scanning, chunker, embeddings, Chroma search,
-                    llm_service, rag_service, evidence_validator, report_service, security*, mcp_*
+                    llm_service, rag_service, evidence_validator, report_service, impact_service, security*, mcp_*
 backend/run_api.py  starts the API on loopback;  backend/run_mcp_server.py  starts the MCP server
 frontend/src/       services/api.js (central client), hooks/, components/, utils/
 tests/              backend tests;  frontend/tests/  frontend tests
@@ -125,6 +127,4 @@ docs/               SECURITY.md, DEPLOYMENT.md, ARCHITECTURE.md, C11_REPORTS.md,
 setup.bat, start.bat, start-backend.bat, start-frontend.bat
 ```
 
-## Status
 
-C1-C11 are implemented; C11 adds repository intelligence report generation. See `PROJECT_STATE.md` for automated verification results and what still needs checking on your machine. Known limits: no real indexing progress, no browser-level UI tests, answer quality depends on the small local model, and secret masking is best-effort.

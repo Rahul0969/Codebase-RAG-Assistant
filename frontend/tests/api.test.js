@@ -154,3 +154,15 @@ test('report history and report content endpoints validate their response shapes
   const report = await api.getReport('b'.repeat(32));
   assert.equal(report.content, '# Report');
 });
+
+
+test('change impact request sends repository-relative changed files', async () => {
+  let seen;
+  const payload = { repository_name: 'demo', changed_files: ['src/main.py'], direct_dependents: [],
+    transitive_dependents: [], related_tests: [], limitations: [] };
+  const api = client(async (url, init) => { seen = { url, body: JSON.parse(init.body) }; return fakeResponse(payload); });
+  const result = await api.analyzeImpact('C:\\repo', ['src/main.py']);
+  assert.equal(seen.url, 'http://127.0.0.1:8000/repository/impact');
+  assert.deepEqual(seen.body, { repository_path: 'C:\\repo', changed_files: ['src/main.py'] });
+  assert.equal(result.repository_name, 'demo');
+});

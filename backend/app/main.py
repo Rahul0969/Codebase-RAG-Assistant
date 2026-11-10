@@ -7,6 +7,7 @@ Workflow: GET /health -> POST /repository/inspect -> /repository/index ->
 from __future__ import annotations
 
 import importlib.util
+from typing import Annotated
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -28,6 +29,7 @@ from .security import PathNotAllowedError, validate_repository_path
 from .security_middleware import LocalAccessMiddleware
 from .rag_service import ask_repository, DEFAULT_TOP_K as ASK_DEFAULT_TOP_K, MAX_TOP_K as ASK_MAX_TOP_K
 from .report_service import REPORT_DIR, generate_report, list_reports, read_report
+from .impact_service import analyze_change_impact
 
 API_VERSION = "1.0.0"
 
@@ -456,3 +458,20 @@ def download_repository_report_endpoint(report_id: str) -> FileResponse:
     except (FileNotFoundError, OSError, ValueError) as error:
         raise _error(404, "Report not found.", "report_not_found") from error
     return FileResponse(path, media_type=mime_type, filename=filename)
+
+
+# ---------------------------------------------------------------------------
+# Code change impact analysis (C12)
+# ---------------------------------------------------------------------------
+class ImpactRequest(BaseModel):
+    repository_path: str = Field(min_length=1, max_length=4096)
+    changed_files: list[Annotated[str, Field(min_length=1, max_length=1024)]] = Field(min_length=1, max_length=20)
+
+
+@app.post("/repository/impact", tags=["analysis"])
+def repository_impact_endpoint(request: ImpactRequest) -> dict:
+    """Find likely direct/transitive dependents and related tests for changed files."""
+    try:
+        return analyze_change_impact(_safe_repo(request.repository_path), request.changed_files)
+    except (ValueError, RuntimeError) as error:
+        raise _translate(error) from error

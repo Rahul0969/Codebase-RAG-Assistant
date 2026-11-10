@@ -7,6 +7,7 @@ export const VIEWS = [
   { id: 'search', label: 'Code Search', icon: '⌕' },
   { id: 'ask', label: 'Ask Codebase', icon: '✦' },
   { id: 'reports', label: 'Reports', icon: '▧' },
+  { id: 'impact', label: 'Change Impact', icon: '⌁' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
 

@@ -2,31 +2,70 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import threading
 from pathlib import Path
 from typing import Any
 
 from .chunker import chunk_repository
+from .security import redact_secrets
 
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_BATCH_SIZE = 8  # conservative for machines with limited RAM
 DEFAULT_PERSIST_DIRECTORY = Path(__file__).resolve().parents[1] / "data" / "chroma_db"
+WRITE_SLICE = 64        # chunks embedded and written to Chroma per step (bounds memory)
+STATS_PAGE = 1000       # metadata rows read per page when summarising an index
+
+# One model per process (loading takes seconds and ~100 MB). Set RAG_EMBEDDING_CACHE=0 to reload
+# every time on a very small machine. One indexing job and one encode call at a time keep RAM flat.
+_MODEL_LOCK = threading.Lock()
+_MODEL_CACHE: dict[str, Any] = {}
+_ENCODE_LOCK = threading.Lock()
+_INDEX_SLOT = threading.Semaphore(1)
+_CLIENT_LOCK = threading.Lock()
+_CLIENTS: dict[str, Any] = {}
+
+
+def _collection_name(repository_path: str | Path) -> str:
+    """Stable per-repository collection name (unchanged, so existing indexes keep working)."""
+    digest = hashlib.sha256(str(Path(repository_path).resolve()).encode("utf-8")).hexdigest()[:16]
+    return f"repo_{digest}"
+
+
+def _chroma_client(persist_directory: Path):
+    """Return one shared persistent client per folder instead of opening a new one per request."""
+    import chromadb
+    key = str(persist_directory)
+    with _CLIENT_LOCK:
+        client = _CLIENTS.get(key)
+        if client is None:
+            client = chromadb.PersistentClient(path=key)
+            _CLIENTS[key] = client
+        return client
 
 
 def _load_embedding_model(model_name: str = DEFAULT_EMBEDDING_MODEL) -> Any:
-    """Load the embedding model only when indexing is requested."""
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError as error:
-        raise RuntimeError(
-            "sentence-transformers is not installed. Run 'python -m pip install -r backend/requirements.txt'."
-        ) from error
-    try:
-        return SentenceTransformer(model_name, device="cpu")
-    except Exception as error:
-        raise RuntimeError(
-            f"Could not load embedding model '{model_name}'. Check internet access for the first download, "
-            "then retry. The model is cached for later runs."
-        ) from error
+    """Load the embedding model on first use and reuse it afterwards."""
+    use_cache = os.environ.get("RAG_EMBEDDING_CACHE", "1") != "0"
+    with _MODEL_LOCK:
+        if use_cache and model_name in _MODEL_CACHE:
+            return _MODEL_CACHE[model_name]
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as error:
+            raise RuntimeError(
+                "sentence-transformers is not installed. Run 'python -m pip install -r backend/requirements.txt'."
+            ) from error
+        try:
+            model = SentenceTransformer(model_name, device="cpu")
+        except Exception as error:
+            raise RuntimeError(
+                f"Could not load embedding model '{model_name}'. Check internet access for the first download, "
+                "then retry. The model is cached for later runs."
+            ) from error
+        if use_cache:
+            _MODEL_CACHE[model_name] = model
+        return model
 
 
 def _get_collection(repository_path: str, persist_directory: Path, model_name: str):
@@ -38,10 +77,9 @@ def _get_collection(repository_path: str, persist_directory: Path, model_name: s
         ) from error
 
     persist_directory.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(persist_directory))
-    repo_hash = hashlib.sha256(str(Path(repository_path).resolve()).encode("utf-8")).hexdigest()[:16]
+    client = _chroma_client(persist_directory)
     collection = client.get_or_create_collection(
-        name=f"repo_{repo_hash}",
+        name=_collection_name(repository_path),
         metadata={"hnsw:space": "cosine", "embedding_model": model_name},
     )
     return client, collection
@@ -71,26 +109,33 @@ def index_chunks(chunks: list[dict], collection: Any, model: Any,
             metadata["symbol"] = str(chunk["symbol"])
         metadatas.append(metadata)
 
-    vectors = []
-    for start in range(0, len(documents), batch_size):
-        encoded = model.encode(
-            documents[start:start + batch_size],
-            batch_size=batch_size,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-        )
-        vectors.extend(encoded.tolist() if hasattr(encoded, "tolist") else encoded)
-
-    # Upsert first so a failed embedding pass never destroys the previous index.
-    collection.upsert(ids=ids, documents=documents, metadatas=metadatas, embeddings=vectors)
+    # Embed and write in small slices so memory stays flat on big repositories. Writing is an
+    # upsert and stale IDs are removed only after every slice succeeded, so a failure part-way
+    # never destroys the previous index.
+    dimensions = 0
+    slice_size = max(batch_size, WRITE_SLICE)
+    for begin in range(0, len(documents), slice_size):
+        end = begin + slice_size
+        vectors = []
+        for start in range(begin, min(end, len(documents)), batch_size):
+            with _ENCODE_LOCK:
+                encoded = model.encode(
+                    documents[start:min(start + batch_size, end)],
+                    batch_size=batch_size,
+                    show_progress_bar=False,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True,
+                )
+            vectors.extend(encoded.tolist() if hasattr(encoded, "tolist") else encoded)
+        collection.upsert(ids=ids[begin:end], documents=documents[begin:end],
+                          metadatas=metadatas[begin:end], embeddings=vectors)
+        dimensions = dimensions or (len(vectors[0]) if vectors else 0)
     existing = collection.get(include=[]).get("ids", [])
     current_ids = set(ids)
     stale_ids = [item for item in existing if item not in current_ids]
-    if stale_ids:
-        collection.delete(ids=stale_ids)
+    for begin in range(0, len(stale_ids), 500):
+        collection.delete(ids=stale_ids[begin:begin + 500])
 
-    dimensions = len(vectors[0]) if vectors else 0
     return {
         "indexed_count": len(ids),
         "removed_stale_count": len(stale_ids),
@@ -101,11 +146,16 @@ def index_chunks(chunks: list[dict], collection: Any, model: Any,
 def index_repository(repository_path: str, max_chars: int = 6000,
                      batch_size: int = DEFAULT_BATCH_SIZE) -> dict:
     """Chunk, embed and persist one local repository in its own Chroma collection."""
-    chunk_result = chunk_repository(repository_path, max_chars=max_chars)
-    model_name = DEFAULT_EMBEDDING_MODEL
-    model = _load_embedding_model(model_name)
-    _, collection = _get_collection(repository_path, DEFAULT_PERSIST_DIRECTORY, model_name)
-    stats = index_chunks(chunk_result["chunks"], collection, model, batch_size=batch_size)
+    if not _INDEX_SLOT.acquire(blocking=False):
+        raise RuntimeError("Another repository is being indexed right now. Wait for it to finish, then try again.")
+    try:
+        chunk_result = chunk_repository(repository_path, max_chars=max_chars)
+        model_name = DEFAULT_EMBEDDING_MODEL
+        model = _load_embedding_model(model_name)
+        _, collection = _get_collection(repository_path, DEFAULT_PERSIST_DIRECTORY, model_name)
+        stats = index_chunks(chunk_result["chunks"], collection, model, batch_size=batch_size)
+    finally:
+        _INDEX_SLOT.release()
     return {
         "repository_name": chunk_result["repository_name"],
         "file_count_scanned": chunk_result["file_count_scanned"],
@@ -148,9 +198,8 @@ def search_repository(repository_path: str, query: str, top_k: int = 5) -> dict:
     if not persist_directory.exists():
         raise ValueError("No index exists yet. Run POST /repository/index first.")
 
-    client = chromadb.PersistentClient(path=str(persist_directory))
-    repo_hash = hashlib.sha256(str(repo).encode("utf-8")).hexdigest()[:16]
-    collection_name = f"repo_{repo_hash}"
+    client = _chroma_client(persist_directory)
+    collection_name = _collection_name(repo)
     try:
         collection = client.get_collection(name=collection_name)
     except Exception as error:
@@ -168,12 +217,13 @@ def search_repository(repository_path: str, query: str, top_k: int = 5) -> dict:
         }
 
     model = _load_embedding_model(DEFAULT_EMBEDDING_MODEL)
-    query_vector = model.encode(
-        [cleaned_query],
-        show_progress_bar=False,
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-    )
+    with _ENCODE_LOCK:
+        query_vector = model.encode(
+            [cleaned_query],
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        )
     vector = query_vector[0].tolist() if hasattr(query_vector[0], "tolist") else list(query_vector[0])
     result = collection.query(
         query_embeddings=[vector],
@@ -190,7 +240,9 @@ def search_repository(repository_path: str, query: str, top_k: int = 5) -> dict:
         metadata = metadata or {}
         matches.append({
             "chunk_id": chunk_id,
-            "content": document or "",
+            # Search results are sent to a browser/MCP caller; mask likely credentials
+            # here too, not only later when the RAG prompt is assembled.
+            "content": redact_secrets(document or ""),
             "file_path": metadata.get("file_path", ""),
             "language": metadata.get("language", ""),
             "kind": metadata.get("kind", ""),
@@ -224,16 +276,20 @@ def get_index_info(repository_path: str) -> dict:
         ) from error
     if not DEFAULT_PERSIST_DIRECTORY.exists():
         return empty
-    client = chromadb.PersistentClient(path=str(DEFAULT_PERSIST_DIRECTORY))
-    repo_hash = hashlib.sha256(str(repo).encode("utf-8")).hexdigest()[:16]
+    client = _chroma_client(DEFAULT_PERSIST_DIRECTORY)
     try:
-        collection = client.get_collection(name=f"repo_{repo_hash}")
+        collection = client.get_collection(name=_collection_name(repo))
     except Exception:
         return empty
     count = collection.count()
     if count == 0:
         return {**empty, "indexed": True}
-    metadatas = collection.get(include=["metadatas"], limit=5000).get("metadatas") or []
+    metadatas: list = []
+    while len(metadatas) < count:  # page through all rows, not just the first 5000
+        page = collection.get(include=["metadatas"], limit=STATS_PAGE, offset=len(metadatas)).get("metadatas") or []
+        if not page:
+            break
+        metadatas.extend(page)
     files, languages, kinds, symbols = set(), {}, {}, 0
     for meta in metadatas:
         meta = meta or {}

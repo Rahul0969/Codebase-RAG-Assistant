@@ -97,6 +97,7 @@ const SHAPES = {
   report: { report_id: is.string, repository_name: is.string, format: is.string, content: is.string, filename: is.string },
   reports: { reports: is.array },
   reportContent: { report_id: is.string, filename: is.string, content: is.string },
+  impact: { repository_name: is.string, changed_files: is.array, direct_dependents: is.array, transitive_dependents: is.array, related_tests: is.array, limitations: is.array },
 };
 
 function checkShape(name, data) {
@@ -205,6 +206,9 @@ export function createApiClient({
       }),
     listReports: () => request('reports', '/api/reports'),
     getReport: (reportId) => request('reportContent', `/api/reports/${encodeURIComponent(reportId)}`),
+    analyzeImpact: (repositoryPath, changedFiles) => request('impact', '/repository/impact', {
+      method: 'POST', body: { repository_path: repositoryPath, changed_files: changedFiles },
+    }),
   };
 }
 
