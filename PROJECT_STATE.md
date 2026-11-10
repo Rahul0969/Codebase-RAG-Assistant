@@ -11,9 +11,10 @@
 8. C8 — MCP server and repository tools
 9. C9 — API integration and end-to-end testing
 10. C10 — Security, documentation, deployment and final frontend design
+11. C11 — AI-powered repository report generation
 
 ## Current commit
-C10 — Security, documentation, deployment and final frontend design delivered (builds on C9). All roadmap commits are implemented. Real-machine verification (npm install/build/test, real FastAPI, Ollama, MCP SDK, browser, Vercel) and Git commits C6-C10 are pending.
+C11 — AI-powered repository report generation delivered (builds on C10). Git commit history and real-machine verification remain pending where noted below.
 
 ## Completed
 - C1: project foundation.
@@ -91,3 +92,35 @@ Claude: delivered C10. Backend: 138 tests pass in a sandbox with stand-in stubs 
 - Python compile check: passed.
 - Frontend Node test suite: 23 passed, 0 failed.
 - Vite production build, real Ollama inference, Windows launcher execution, and Vercel deployment remain unverified and must be checked on the target machine.
+
+
+## Commit 11 — Repository Intelligence Report Generator
+
+- Added `backend/app/report_service.py` for bounded, local repository report generation.
+- Added Markdown (`.md`), HTML (`.html`) and JSON (`.json`) output formats.
+- Reports include repository statistics, file-type/language counts, dependency manifest observations, directory structure, entry-point candidates, important files, conservative security pattern matches, recommendations, evidence references and limitations.
+- Factual statistics and file references come from repository inspection and Tree-sitter chunking; chunking failures are disclosed rather than fabricated.
+- Optional executive-summary generation uses the configured local Ollama model. If Ollama is unavailable, deterministic summary generation remains available.
+- Added report storage under `backend/data/reports`; this folder is ignored by Git. Report IDs are opaque UUIDs and download paths are validated.
+- Added FastAPI endpoints: `POST /api/reports/generate`, `GET /api/reports`, `GET /api/reports/{report_id}`, and `GET /api/reports/{report_id}/download`.
+- Added Reports navigation and page to the React frontend, including format selection, optional AI summary, preview, download and report history.
+- Added backend report service/API tests and frontend API-client tests.
+- Added `docs/C11_REPORTS.md`, `docs/ARCHITECTURE.md` and `docs/SAMPLE_REPORT.md`.
+
+## C11 verification in authoring environment (2026-11-09)
+
+- Python compilation: passed.
+- Backend suite: 145 passed, 0 failed, 4 skipped (MCP SDK package is not installed in this environment).
+- Frontend Node tests: 25 passed, 0 failed.
+- Vite production build: not run successfully because Vite is not installed in the environment (`vite: not found`).
+- Real Ollama executive-summary generation: not tested; deterministic fallback was tested.
+- Windows setup/start scripts, real browser UI and Vercel deployment: not tested.
+
+## Remaining verification
+
+- On Windows, run `setup.bat`, then `start.bat`; open Reports and generate each of the three formats.
+- Confirm the real Ollama summary works when the model is available and fallback works when it is not.
+- Run `npm install`, `npm test`, and `npm run build` in `frontend`.
+- Install the MCP dependency and run the four MCP SDK tests (they are skipped in this environment).
+- Verify the downloaded report files open correctly in a browser/editor and do not include excluded secret files.
+- Verify the hosted Vercel page can connect to the local backend in supported browsers, if deployment is desired.

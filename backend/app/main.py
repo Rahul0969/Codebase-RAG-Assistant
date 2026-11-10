@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -26,6 +27,7 @@ from .llm_service import (
 from .security import PathNotAllowedError, validate_repository_path
 from .security_middleware import LocalAccessMiddleware
 from .rag_service import ask_repository, DEFAULT_TOP_K as ASK_DEFAULT_TOP_K, MAX_TOP_K as ASK_MAX_TOP_K
+from .report_service import REPORT_DIR, generate_report, list_reports, read_report
 
 API_VERSION = "1.0.0"
 
@@ -393,3 +395,64 @@ def llm_status_endpoint() -> dict:
         return check_ollama()
     except LLMError as error:
         raise _translate(error) from error
+
+
+# ---------------------------------------------------------------------------
+# Repository intelligence reports (C11)
+# ---------------------------------------------------------------------------
+class ReportRequest(BaseModel):
+    repository_path: str = Field(min_length=1, max_length=4096)
+    format: str = Field(default="md", pattern=r"^(md|html|json)$")
+    use_ai_summary: bool = True
+
+
+class ReportResponse(BaseModel):
+    report_id: str
+    repository_name: str
+    generated_at: str
+    format: str
+    filename: str
+    mime_type: str
+    content: str
+    summary_source: str
+
+
+@app.post("/api/reports/generate", tags=["reports"], response_model=ReportResponse)
+def generate_repository_report_endpoint(request: ReportRequest) -> dict:
+    """Generate a locally stored repository report in Markdown, HTML or JSON."""
+    try:
+        return generate_report(
+            _safe_repo(request.repository_path),
+            report_format=request.format,
+            use_ai_summary=request.use_ai_summary,
+        )
+    except (ValueError, RuntimeError) as error:
+        raise _translate(error) from error
+
+
+@app.get("/api/reports", tags=["reports"])
+def list_repository_reports_endpoint() -> dict:
+    """List report metadata without exposing local storage paths."""
+    return {"reports": list_reports()}
+
+
+@app.get("/api/reports/{report_id}", tags=["reports"])
+def get_repository_report_endpoint(report_id: str) -> dict:
+    """Retrieve a generated report's text content and safe metadata."""
+    try:
+        content, mime_type, filename = read_report(report_id)
+    except FileNotFoundError as error:
+        raise _error(404, str(error), "report_not_found") from error
+    return {"report_id": report_id, "filename": filename, "mime_type": mime_type, "content": content}
+
+
+@app.get("/api/reports/{report_id}/download", tags=["reports"])
+def download_repository_report_endpoint(report_id: str) -> FileResponse:
+    """Download a generated report by its opaque ID."""
+    try:
+        _content, mime_type, filename = read_report(report_id)
+        path = (REPORT_DIR / filename).resolve(strict=True)
+        path.relative_to(REPORT_DIR.resolve())
+    except (FileNotFoundError, OSError, ValueError) as error:
+        raise _error(404, "Report not found.", "report_not_found") from error
+    return FileResponse(path, media_type=mime_type, filename=filename)

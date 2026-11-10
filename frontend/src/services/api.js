@@ -9,6 +9,7 @@ export const TIMEOUTS = {
   index: 30 * 60_000, // indexing a large repository on a small PC can take a long time
   search: 90_000,
   ask: 5 * 60_000, // a local model may need minutes on low-memory hardware
+  report: 3 * 60_000, // optional local LLM summary; deterministic report is the fallback
 };
 
 /** One error type for everything that can go wrong, so the UI can show friendly messages. */
@@ -93,6 +94,9 @@ const SHAPES = {
     answer: is.string, evidence_status: is.string, validation_passed: is.boolean,
     citations: is.array, retrieved_chunks: is.array, model: is.string,
   },
+  report: { report_id: is.string, repository_name: is.string, format: is.string, content: is.string, filename: is.string },
+  reports: { reports: is.array },
+  reportContent: { report_id: is.string, filename: is.string, content: is.string },
 };
 
 function checkShape(name, data) {
@@ -195,6 +199,12 @@ export function createApiClient({
         method: 'POST',
         body: { repository_path: repositoryPath, question, top_k: topK, include_source_text: true },
       }),
+    generateReport: (repositoryPath, format = 'md', useAiSummary = true) =>
+      request('report', '/api/reports/generate', {
+        method: 'POST', body: { repository_path: repositoryPath, format, use_ai_summary: useAiSummary },
+      }),
+    listReports: () => request('reports', '/api/reports'),
+    getReport: (reportId) => request('reportContent', `/api/reports/${encodeURIComponent(reportId)}`),
   };
 }
 
@@ -211,6 +221,6 @@ export function getApiSafe() {
     return getApi();
   } catch (error) {
     const fail = () => Promise.reject(error);
-    return { baseUrl: '(invalid address)', health: fail, inspect: fail, status: fail, index: fail, search: fail, ask: fail };
+    return { baseUrl: '(invalid address)', health: fail, inspect: fail, status: fail, index: fail, search: fail, ask: fail, generateReport: fail, listReports: fail, getReport: fail };
   }
 }

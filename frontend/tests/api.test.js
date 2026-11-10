@@ -127,3 +127,30 @@ test('hosted pages declare the loopback address space; local pages do not', asyn
   await api.health();
   assert.equal(init.targetAddressSpace, 'loopback');
 });
+
+test('report generation sends repository, format and local AI option', async () => {
+  let seen;
+  const payload = {
+    report_id: 'a'.repeat(32), repository_name: 'demo', generated_at: '2026-11-09T00:00:00+00:00',
+    format: 'html', filename: 'report.html', mime_type: 'text/html', content: '<html></html>',
+    summary_source: 'deterministic',
+  };
+  const api = client(async (url, init) => {
+    seen = { url, body: JSON.parse(init.body) };
+    return fakeResponse(payload);
+  });
+  const result = await api.generateReport('C:\\repo', 'html', false);
+  assert.equal(seen.url, 'http://127.0.0.1:8000/api/reports/generate');
+  assert.deepEqual(seen.body, { repository_path: 'C:\\repo', format: 'html', use_ai_summary: false });
+  assert.equal(result.report_id, payload.report_id);
+});
+
+test('report history and report content endpoints validate their response shapes', async () => {
+  const api = client(async (url) => {
+    if (url.endsWith('/api/reports')) return fakeResponse({ reports: [] });
+    return fakeResponse({ report_id: 'b'.repeat(32), filename: 'report.md', mime_type: 'text/markdown', content: '# Report' });
+  });
+  assert.deepEqual(await api.listReports(), { reports: [] });
+  const report = await api.getReport('b'.repeat(32));
+  assert.equal(report.content, '# Report');
+});

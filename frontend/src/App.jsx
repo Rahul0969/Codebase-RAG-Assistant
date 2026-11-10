@@ -3,6 +3,7 @@ import AskPanel from './components/AskPanel.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import { Header, Sidebar } from './components/Layout.jsx';
 import RepositoryPanel from './components/RepositoryPanel.jsx';
+import ReportsPanel from './components/ReportsPanel.jsx';
 import SearchPanel from './components/SearchPanel.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
 import { useWorkspace } from './hooks/useWorkspace.js';
@@ -41,6 +42,7 @@ export default function App() {
           <div hidden={view !== 'repository'}><RepositoryPanel workspace={workspace} /></div>
           <div hidden={view !== 'search'}><SearchPanel workspace={workspace} /></div>
           <div hidden={view !== 'ask'}><AskPanel workspace={workspace} /></div>
+          <div hidden={view !== 'reports'}><ReportsPanel workspace={workspace} /></div>
           {view === 'settings' ? <SettingsPanel workspace={workspace} /> : null}
         </main>
       </div>

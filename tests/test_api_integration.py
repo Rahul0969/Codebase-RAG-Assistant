@@ -279,7 +279,9 @@ class TestHttpLayer(unittest.TestCase):
     def test_all_routes_registered(self):
         paths = set(self.client.get("/openapi.json").json()["paths"])
         expected = {"/health", "/repository/inspect", "/repository/chunk", "/repository/index",
-                    "/repository/status", "/repository/search", "/repository/ask", "/llm/status"}
+                    "/repository/status", "/repository/search", "/repository/ask", "/llm/status",
+                    "/api/reports/generate", "/api/reports", "/api/reports/{report_id}",
+                    "/api/reports/{report_id}/download"}
         self.assertTrue(expected <= paths)
 
     def test_health_shape(self):

@@ -6,6 +6,7 @@ export const VIEWS = [
   { id: 'repository', label: 'Repository', icon: '▤' },
   { id: 'search', label: 'Code Search', icon: '⌕' },
   { id: 'ask', label: 'Ask Codebase', icon: '✦' },
+  { id: 'reports', label: 'Reports', icon: '▧' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
