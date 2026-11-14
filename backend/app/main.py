@@ -23,7 +23,7 @@ from .embedding_service import (
 )
 from .llm_service import (
     LLMConfigError, LLMError, OllamaModelNotFoundError, OllamaResponseError,
-    OllamaTimeoutError, OllamaUnavailableError, check_ollama, get_settings,
+    OllamaTimeoutError, OllamaUnavailableError, check_ollama, get_settings, list_local_models,
 )
 from .security import PathNotAllowedError, validate_repository_path
 from .security_middleware import LocalAccessMiddleware
@@ -48,7 +48,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=trusted_origins(),
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["Content-Type", "Accept"],
     expose_headers=["X-Error-Code"],
     max_age=600,
@@ -361,6 +361,7 @@ class AskResponse(BaseModel):
     question: str
     answer: str
     model: str
+    routing: dict = Field(default_factory=dict)
     evidence_status: str
     success: bool
     retrieved_count: int
@@ -396,6 +397,35 @@ def llm_status_endpoint() -> dict:
     try:
         return check_ollama()
     except LLMError as error:
+        raise _translate(error) from error
+
+
+class ModelPreferencesRequest(BaseModel):
+    mode: str = Field(pattern=r"^(AUTO|MANUAL)$")
+    model: str = Field(default="", max_length=200)
+
+
+@app.get("/llm/models", tags=["rag"])
+def llm_models_endpoint() -> dict:
+    """List locally installed Ollama models and saved routing preferences."""
+    try:
+        return list_local_models()
+    except LLMError as error:
+        raise _translate(error) from error
+
+
+@app.put("/llm/preferences", tags=["rag"])
+def update_llm_preferences_endpoint(request: ModelPreferencesRequest) -> dict:
+    """Persist AUTO/MANUAL routing preferences on this computer."""
+    from .model_router import save_preferences
+    try:
+        if request.mode == "MANUAL":
+            registry = list_local_models()
+            installed = {item["name"] for item in registry["models"]}
+            if request.model not in installed:
+                raise ValueError("Choose a model that is installed in local Ollama.")
+        return {"preferences": save_preferences(request.mode, request.model)}
+    except (LLMError, ValueError) as error:
         raise _translate(error) from error
 
 

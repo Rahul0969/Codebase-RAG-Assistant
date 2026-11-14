@@ -50,8 +50,8 @@ class FakeCollection:
         for i, doc, meta, vec in zip(ids, documents, metadatas, embeddings):
             self.rows[i] = (doc, meta, vec)
 
-    def get(self, include=None, limit=None):
-        ids = list(self.rows)
+    def get(self, include=None, limit=None, offset=0):
+        ids = list(self.rows)[offset:offset + limit if limit is not None else None]
         return {"ids": ids, "metadatas": [self.rows[i][1] for i in ids]}
 
     def delete(self, ids):

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import CodeBlock from './CodeBlock.jsx';
 import EvidenceBadge from './EvidenceBadge.jsx';
 import { ErrorNotice, Spinner } from './Feedback.jsx';
+import ConfirmDialog from './ConfirmDialog.jsx';
 import { findChunkForCitation, splitAnswer } from '../utils/evidence.js';
 
 const EXAMPLES = [
@@ -58,11 +59,26 @@ function SourceViewer({ citation, chunks }) {
   );
 }
 
+function ResponseActions({ text }) {
+  const [copied, setCopied] = useState(false);
+  const [vote, setVote] = useState('');
+  async function copy() {
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { setCopied(false); }
+  }
+  return (
+    <div className="row response-actions">
+      <button type="button" className="btn btn-ghost btn-small" onClick={copy}>{copied ? 'Copied' : 'Copy answer'}</button>
+      <button type="button" className={vote === 'up' ? 'btn btn-ghost btn-small is-on' : 'btn btn-ghost btn-small'} aria-pressed={vote === 'up'} aria-label="Helpful" onClick={() => setVote(vote === 'up' ? '' : 'up')}>Helpful</button>
+      <button type="button" className={vote === 'down' ? 'btn btn-ghost btn-small is-on' : 'btn btn-ghost btn-small'} aria-pressed={vote === 'down'} aria-label="Not helpful" onClick={() => setVote(vote === 'down' ? '' : 'down')}>Not helpful</button>
+    </div>
+  );
+}
+
 function Entry({ entry, baseUrl }) {
   const [open, setOpen] = useState(null);
   const result = entry.result;
   return (
-    <article className="qa" aria-live="polite">
+    <article className="qa" id={`qa-${entry.id}`} aria-live="polite">
       <div className="question"><span className="who">You</span><p>{entry.question}</p></div>
       <div className="answer">
         <span className="who">Assistant</span>
@@ -78,10 +94,12 @@ function Entry({ entry, baseUrl }) {
               </p>
             ) : null}
             <SourceViewer citation={open} chunks={result.retrieved_chunks} />
+            <ResponseActions text={result.answer} />
             <details className="retrieval">
               <summary>
-                Retrieval: {result.used_chunk_count} of {result.retrieved_count} chunks used · model {result.model}
+                Retrieval: {result.used_chunk_count} of {result.retrieved_count} chunks used · model {result.model} · {result.routing?.mode || 'AUTO'}
               </summary>
+              {result.routing?.reason ? <p className="muted">Routing: {result.routing.reason}</p> : null}
               {result.retrieved_chunks.length === 0 ? <p className="muted">No relevant code was retrieved.</p> : (
                 <ul>
                   {result.retrieved_chunks.map((chunk) => (
@@ -113,6 +131,7 @@ export default function AskPanel({ workspace }) {
   const [question, setQuestion] = useState('');
   const [topK, setTopK] = useState(5);
   const inputRef = useRef(null);
+  const [confirmNew, setConfirmNew] = useState(false);
   const ollama = health.data?.ollama;
   const canAsk = repositoryReady && health.state === 'online' && !asking && question.trim().length > 0;
 
@@ -124,7 +143,17 @@ export default function AskPanel({ workspace }) {
   }
 
   return (
-    <section className="card" aria-labelledby="ask-title">
+    <div className="ask-layout">
+    <aside className="card ask-side" aria-label="Conversation">
+      <button type="button" className="btn btn-primary" onClick={() => (asks.length ? setConfirmNew(true) : inputRef.current?.focus())} disabled={asking}>+ New conversation</button>
+      <p className="eyebrow">THIS CONVERSATION</p>
+      {asks.length === 0 ? <p className="muted">No questions yet.</p> : (
+        <ol className="ask-history">{asks.map((entry) => (
+          <li key={entry.id}><a href={`#qa-${entry.id}`} onClick={(event) => { event.preventDefault(); document.getElementById(`qa-${entry.id}`)?.scrollIntoView?.({ block: 'start' }); }}>{entry.question}</a></li>
+        ))}</ol>
+      )}
+    </aside>
+    <section className="card ask-main" aria-labelledby="ask-title">
       <h2 id="ask-title">Ask the codebase</h2>
       {!repositoryReady ? <p className="notice notice-warn" role="status">Index a repository first on the Repository page.</p> : null}
       {health.state === 'online' && ollama && !ollama.reachable ? (
@@ -173,8 +202,12 @@ export default function AskPanel({ workspace }) {
         </div>
       </form>
       {asks.length > 0 ? (
-        <button type="button" className="btn btn-ghost btn-small" onClick={clearAsks} disabled={asking}>Clear conversation</button>
+        <button type="button" className="btn btn-ghost btn-small" onClick={() => setConfirmNew(true)} disabled={asking}>Clear conversation</button>
       ) : null}
+      <ConfirmDialog open={confirmNew} title="Clear this conversation?" confirmLabel="Clear" onCancel={() => setConfirmNew(false)} onConfirm={() => { clearAsks(); setConfirmNew(false); inputRef.current?.focus(); }}>
+        Your questions and answers on this screen will be removed. Indexed code is not affected.
+      </ConfirmDialog>
     </section>
+    </div>
   );
 }

@@ -10,6 +10,8 @@ export const TIMEOUTS = {
   search: 90_000,
   ask: 5 * 60_000, // a local model may need minutes on low-memory hardware
   report: 3 * 60_000, // optional local LLM summary; deterministic report is the fallback
+  models: 10_000,
+  modelPreferences: 10_000,
 };
 
 /** One error type for everything that can go wrong, so the UI can show friendly messages. */
@@ -96,6 +98,8 @@ const SHAPES = {
   },
   report: { report_id: is.string, repository_name: is.string, format: is.string, content: is.string, filename: is.string },
   reports: { reports: is.array },
+  models: { models: is.array, preferences: is.object },
+  modelPreferences: { preferences: is.object },
   reportContent: { report_id: is.string, filename: is.string, content: is.string },
   impact: { repository_name: is.string, changed_files: is.array, direct_dependents: is.array, transitive_dependents: is.array, related_tests: is.array, limitations: is.array },
 };
@@ -205,6 +209,8 @@ export function createApiClient({
         method: 'POST', body: { repository_path: repositoryPath, format, use_ai_summary: useAiSummary },
       }),
     listReports: () => request('reports', '/api/reports'),
+    listModels: () => request('models', '/llm/models'),
+    saveModelPreferences: (mode, model = '') => request('modelPreferences', '/llm/preferences', { method: 'PUT', body: { mode, model } }),
     getReport: (reportId) => request('reportContent', `/api/reports/${encodeURIComponent(reportId)}`),
     analyzeImpact: (repositoryPath, changedFiles) => request('impact', '/repository/impact', {
       method: 'POST', body: { repository_path: repositoryPath, changed_files: changedFiles },

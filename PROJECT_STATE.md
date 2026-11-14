@@ -174,3 +174,50 @@ Claude: delivered C10. Backend: 138 tests pass in a sandbox with stand-in stubs 
 - Verify actual embedding model inference, Chroma persistence and Ollama response behavior.
 - Verify browser-to-localhost permissions and optional Vercel deployment.
 - Create Git commits C6–C12 in order if the existing Git history does not already contain them; do not represent a combined ZIP as seven historical commits.
+
+## Commit 13 — UI redesign (2026-11-10)
+
+- Redesigned the React application around the supplied dark analytics dashboard reference: midnight navy surfaces, blue ambient lighting, cyan/violet accents, compact grouped sidebar, workspace breadcrumb/search bar, and refined cards.
+- Rebuilt the dashboard with truthful workspace metrics, repository/index status, language distribution, quick actions, recent activity derived from current workspace state, and the first-run checklist.
+- Kept existing page components, navigation identifiers, API client, and backend endpoints intact. No UI library or new runtime dependency was added.
+- Added responsive layouts and documented the redesign in `docs/C13_DESIGN_REFINEMENT.md`.
+- Updated the integration-test FakeCollection fixture to accept Chroma offset pagination used by the existing index-statistics implementation.
+- Validation: frontend Node tests 26 passed; Python compileall passed. Backend suite result and browser/build verification are recorded with the Commit 13 delivery. Vite production build is not available until frontend dependencies are installed on the target machine.
+
+## Commit 14-A — Reports documentation reader refinement (2026-11-14)
+
+- Refined the Reports page to match the supplied documentation-screen reference while retaining Commit 13's dark navy/blue visual system.
+- Replaced the plain textarea preview with a safe Markdown document reader, section navigation, code-block presentation, report toolbar, generation controls, and responsive recent-report history.
+- Preserved existing report APIs, all three download formats, optional local Ollama summary behavior, and deterministic fallback.
+- No new runtime dependency; backend and core RAG services are unchanged.
+- Frontend Node tests: 26 passed, 0 failed.
+- Vite build/browser rendering and real local Ollama/report generation remain target-machine verification tasks.
+- C14-B remains planned for AUTO/MANUAL intelligent local model routing; local-only/free inference requirement remains in force.
+
+## Commit 15 — Intelligent Local Model Routing (completion package)
+
+Commit 15 delivers the originally planned Commit 14 intelligent model-routing scope, carried forward under the next commit number. It also retains the Commit 14-A Reports UI refinement from the previous package.
+
+- Added a local Ollama model registry endpoint (`GET /llm/models`) exposing installed model names and basic metadata.
+- Added persistent local preferences (`backend/data/model_preferences.json`, ignored runtime data) with `AUTO` and `MANUAL` modes and atomic writes.
+- Added `PUT /llm/preferences`; MANUAL mode validates that the chosen model is installed before saving.
+- Added AUTO routing that classifies the request as low/medium/high complexity, estimates available physical memory without a new dependency, and selects from installed models using a conservative memory budget.
+- MANUAL mode pins the selected installed model; if it is removed later, the request returns a clear actionable error.
+- All discovery and inference use the loopback-only Ollama client. No cloud model provider or paid API was added.
+- Added Settings UI for mode selection, local model discovery, refresh, manual model selection and preference saving.
+- Repository Q&A responses now expose the selected routing mode and a human-readable routing reason alongside the model name.
+- Integrated routing into shared `generate_chat`, so both repository Q&A and optional AI report summaries use the same policy.
+- Retained serialized generation to avoid concurrent model loads on low-memory machines.
+- Added unit tests for preferences, manual validation and AUTO routing.
+
+### Verification status
+- Python compileall: passed.
+- Backend pytest suite: 196 passed, 4 skipped, 26 subtests passed.
+- Frontend Node test suite: 27 passed.
+- Vite production build: not run because frontend/node_modules was not present in the build environment.
+- Real Ollama model discovery, RAM-based selection and inference must still be verified on the target Windows computer.
+
+
+## C16 (redesign implemented)
+- Done: top-nav shell, notifications, confirm dialog, Search filters, Ask conversation sidebar/copy/feedback, Impact graph + risk card, new theme. See docs/C16_TOP_NAV_REDESIGN.md.
+- Open: run npm install, vite build, pytest and visual/responsive checks locally (not run in the build sandbox).

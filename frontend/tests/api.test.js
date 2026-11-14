@@ -166,3 +166,24 @@ test('change impact request sends repository-relative changed files', async () =
   assert.deepEqual(seen.body, { repository_path: 'C:\\repo', changed_files: ['src/main.py'] });
   assert.equal(result.repository_name, 'demo');
 });
+
+test('local model registry and routing preferences use local API endpoints', async () => {
+  const calls = [];
+  const api = createApiClient({
+    baseUrl: 'http://127.0.0.1:8000',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      const payload = url.endsWith('/llm/models')
+        ? { models: [{ name: 'qwen2.5:1.5b' }], preferences: { mode: 'AUTO', model: '' } }
+        : { preferences: { mode: 'MANUAL', model: 'qwen2.5:1.5b' } };
+      return new Response(JSON.stringify(payload), { status: 200 });
+    },
+  });
+  const models = await api.listModels();
+  const saved = await api.saveModelPreferences('MANUAL', 'qwen2.5:1.5b');
+  assert.equal(models.models[0].name, 'qwen2.5:1.5b');
+  assert.equal(saved.preferences.mode, 'MANUAL');
+  assert.equal(calls[0].url, 'http://127.0.0.1:8000/llm/models');
+  assert.equal(calls[1].init.method, 'PUT');
+  assert.deepEqual(JSON.parse(calls[1].init.body), { mode: 'MANUAL', model: 'qwen2.5:1.5b' });
+});

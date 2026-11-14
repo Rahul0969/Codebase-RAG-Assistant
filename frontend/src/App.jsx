@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import AskPanel from './components/AskPanel.jsx';
 import Dashboard from './components/Dashboard.jsx';
-import { Header, Sidebar } from './components/Layout.jsx';
+import { TopNav } from './components/Layout.jsx';
 import RepositoryPanel from './components/RepositoryPanel.jsx';
 import ReportsPanel from './components/ReportsPanel.jsx';
 import ImpactPanel from './components/ImpactPanel.jsx';
@@ -21,6 +21,14 @@ export default function App() {
   }
 
   useEffect(() => {
+    const onKey = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); navigate('search'); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
     if (!menuOpen) return undefined;
     const onKey = (event) => { if (event.key === 'Escape') setMenuOpen(false); };
     window.addEventListener('keydown', onKey);
@@ -29,14 +37,18 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar view={view} onNavigate={navigate} health={workspace.health} open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <TopNav
+        view={view}
+        health={workspace.health}
+        modelRouting={workspace.modelRouting}
+        lastUsedModel={workspace.lastUsedModel}
+        repoPath={workspace.repoPath}
+        repositoryReady={workspace.repositoryReady}
+        menuOpen={menuOpen}
+        onToggleMenu={() => setMenuOpen((open) => !open)}
+        onNavigate={navigate}
+      />
       <div className="main">
-        <Header
-          health={workspace.health}
-          repoPath={workspace.repoPath}
-          menuOpen={menuOpen}
-          onToggleMenu={() => setMenuOpen((open) => !open)}
-        />
         <main className="content" id="content">
           {view === 'dashboard' ? <Dashboard workspace={workspace} onNavigate={navigate} /> : null}
           {/* These pages stay mounted (just hidden) so typed text and results survive navigation. */}

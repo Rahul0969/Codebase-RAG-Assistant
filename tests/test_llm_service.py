@@ -28,13 +28,16 @@ class FakeResponse:
 
 
 class FakeOpener:
-    def __init__(self, result=None, error=None):
+    def __init__(self, result=None, error=None, results=None):
         self.result, self.error, self.requests = result, error, []
+        self.results = list(results or [])
 
     def open(self, request, timeout=None):
         self.requests.append((request, timeout))
         if self.error:
             raise self.error
+        if self.results:
+            return self.results.pop(0)
         return self.result
 
 
@@ -53,11 +56,16 @@ class TestLLMService(unittest.TestCase):
                 del os.environ[name]
 
     def test_successful_chat_uses_configured_model_and_options(self):
-        opener = FakeOpener(FakeResponse({"model": "qwen2.5:3b", "message": {"content": " Hello "}}))
+        opener = FakeOpener(results=[
+            FakeResponse({"models": [{"name": "qwen2.5:3b", "details": {"parameter_size": "3B"}}]}),
+            FakeResponse({"model": "qwen2.5:3b", "message": {"content": " Hello "}}),
+        ])
         with patched(opener):
             result = generate_chat(MESSAGES)
-        self.assertEqual(result, {"text": "Hello", "model": "qwen2.5:3b"})
-        request, timeout = opener.requests[0]
+        self.assertEqual(result["text"], "Hello")
+        self.assertEqual(result["model"], "qwen2.5:3b")
+        self.assertEqual(result["mode"], "AUTO")
+        request, timeout = opener.requests[1]
         body = json.loads(request.data)
         self.assertEqual(body["model"], "qwen2.5:3b")
         self.assertFalse(body["stream"])

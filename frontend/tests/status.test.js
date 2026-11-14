@@ -16,6 +16,10 @@ test('modelInfo reports unknown, Ollama down, model missing and ready', () => {
   assert.equal(modelInfo(online({ reachable: true, model: 'qwen2.5:3b', model_available: false })).label, 'Model not installed');
   const ready = modelInfo(online({ reachable: true, model: 'qwen2.5:3b', model_available: true }));
   assert.deepEqual([ready.tone, ready.label], ['ok', 'Model: qwen2.5:3b']);
+  const manual = modelInfo(online({ reachable: true, model: 'llama3.2:1b', model_available: true }), { preferences: { mode: 'MANUAL', model: 'mistral:7b' } });
+  assert.deepEqual([manual.name, manual.mode, manual.label], ['mistral:7b', 'MANUAL', 'Model: mistral:7b']);
+  const automatic = modelInfo(online({ reachable: true, model: 'llama3.2:1b', model_available: true }), { preferences: { mode: 'AUTO', model: '' } }, 'qwen2.5:0.5b');
+  assert.deepEqual([automatic.name, automatic.mode], ['AUTO · qwen2.5:0.5b', 'AUTO']);
 });
 
 test('dashboardSteps marks real progress and exactly one current step', () => {

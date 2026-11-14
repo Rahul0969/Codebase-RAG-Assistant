@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ErrorNotice, Spinner } from './Feedback.jsx';
+import ImpactGraph, { RiskCard } from './ImpactGraph.jsx';
 
 const MAX_EDGES_SHOWN = 200;
 const REASONS = {
@@ -111,6 +112,8 @@ export default function ImpactPanel({ workspace }) {
               </div>
             ) : null}
           </section>
+
+          <div className="impact-visual"><ImpactGraph result={result} /><RiskCard result={result} /></div>
 
           <FileList title="Direct dependents" tone="confirmed" hint="Confirmed: these files import a changed file."
             files={result.direct_dependents} emptyText="No file imports the changed files directly." />

@@ -6,12 +6,20 @@ export function connectionInfo(health) {
   return { tone: 'neutral', label: 'Connecting…' };
 }
 
-export function modelInfo(health) {
-  if (health.state !== 'online') return { tone: 'neutral', label: 'Model: unknown' };
+export function modelInfo(health, modelRouting = null, lastUsedModel = '') {
+  if (health.state !== 'online') return { tone: 'neutral', label: 'Model: unknown', name: 'Unknown', mode: '—' };
   const ollama = health.data?.ollama;
-  if (!ollama?.reachable) return { tone: 'bad', label: 'Ollama not running' };
-  if (ollama.model_available === false) return { tone: 'warn', label: 'Model not installed' };
-  return { tone: 'ok', label: `Model: ${ollama.model}` };
+  if (!ollama?.reachable) return { tone: 'bad', label: 'Ollama not running', name: 'Unavailable', mode: '—' };
+  const preferences = modelRouting?.preferences;
+  if (preferences?.mode === 'MANUAL' && preferences.model) {
+    return { tone: 'ok', label: `Model: ${preferences.model}`, name: preferences.model, mode: 'MANUAL' };
+  }
+  if (preferences?.mode === 'AUTO') {
+    const name = lastUsedModel ? `AUTO · ${lastUsedModel}` : 'AUTO routing';
+    return { tone: 'ok', label: `Model: ${name}`, name, mode: 'AUTO' };
+  }
+  if (ollama.model_available === false) return { tone: 'warn', label: 'Model not installed', name: 'Not installed', mode: '—' };
+  return { tone: 'ok', label: `Model: ${ollama.model}`, name: ollama.model, mode: '—' };
 }
 
 /** Steps of the first-run checklist, each with a real "done" state. */

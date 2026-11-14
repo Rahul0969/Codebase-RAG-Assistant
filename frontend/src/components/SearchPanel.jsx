@@ -1,17 +1,23 @@
 import { useState } from 'react';
 import CodeBlock from './CodeBlock.jsx';
 import { EmptyState, ErrorNotice, Spinner } from './Feedback.jsx';
+import { facets, fileExt, filterMatches } from '../utils/search.js';
 
 export default function SearchPanel({ workspace }) {
   const { search, lastQuery, runSearch, repositoryReady, health, api } = workspace;
   const [query, setQuery] = useState('');
   const [topK, setTopK] = useState(5);
+  const [filters, setFilters] = useState({ language: '', directory: '', extension: '' });
   const loading = search.status === 'loading';
+  const allMatches = search.status === 'success' ? search.data.matches : [];
+  const options = facets(allMatches);
+  const shown = filterMatches(allMatches, filters);
+  const setFilter = (key) => (event) => setFilters((f) => ({ ...f, [key]: event.target.value }));
   const canSearch = repositoryReady && health.state === 'online' && !loading && query.trim().length > 0;
 
   function submit(event) {
     event.preventDefault();
-    if (canSearch) runSearch(query, topK);
+    if (canSearch) { setFilters({ language: '', directory: '', extension: '' }); runSearch(query, topK); }
   }
 
   return (
@@ -43,13 +49,22 @@ export default function SearchPanel({ workspace }) {
       {search.status === 'success' && search.data.matches.length === 0 ? (
         <EmptyState title="No results">Nothing matched “{lastQuery}”. Try different words, or re-index if the code changed.</EmptyState>
       ) : null}
+      {allMatches.length > 0 ? (
+        <div className="filters" role="group" aria-label="Filter results">
+          <label className="filter">Language<select value={filters.language} onChange={setFilter('language')}><option value="">All</option>{options.languages.map((v) => <option key={v} value={v}>{v}</option>)}</select></label>
+          <label className="filter">Directory<select value={filters.directory} onChange={setFilter('directory')}><option value="">All</option>{options.directories.map((v) => <option key={v} value={v}>{v}</option>)}</select></label>
+          <label className="filter">File type<select value={filters.extension} onChange={setFilter('extension')}><option value="">All</option>{options.extensions.map((v) => <option key={v} value={v}>{v}</option>)}</select></label>
+          <span className="muted filter-count">{shown.length} of {allMatches.length} results</span>
+        </div>
+      ) : null}
+      {allMatches.length > 0 && shown.length === 0 ? <EmptyState title="No results match these filters">Clear a filter to see more results.</EmptyState> : null}
       {search.status === 'success' ? (
         <ol className="results">
-          {search.data.matches.map((match) => (
+          {shown.map((match) => (
             <li key={match.chunk_id} className="result-card">
               <div className="result-head">
                 <code className="path">{match.file_path}</code>
-                <span className="chip">{Math.round(match.similarity * 100)}% match</span>
+                <span className="row"><span className="chip">{fileExt(match.file_path) || 'file'}</span><span className="relevance" title="Relevance"><i style={{ width: `${Math.max(4, Math.min(100, Math.round(match.similarity * 100)))}%` }} /></span><span className="chip chip-score">{Math.round(match.similarity * 100)}% match</span></span>
               </div>
               <p className="meta">
                 {match.symbol ? <span>{match.symbol} · </span> : null}

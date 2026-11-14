@@ -12,6 +12,7 @@ from typing import Any
 from .embedding_service import search_repository
 from .evidence_validator import validate_answer
 from .llm_service import LLMError, generate_chat, get_settings
+from .model_router import get_preferences
 from .security import redact_secrets
 
 logger = logging.getLogger(__name__)
@@ -238,9 +239,11 @@ def retrieve_and_generate(repository_path: str, question: str,
     if not built["chunks"]:
         settings = get_settings()
         answer, model, success = INSUFFICIENT_ANSWER, settings.model, False
+        routing = {"mode": get_preferences()["mode"], "reason": "No relevant code was retrieved; no model was invoked."}
     else:
         reply = generate_chat(build_messages(cleaned_question, built["context"]))
         answer, model, success = reply["text"], reply["model"], True
+        routing = reply.get("routing", {"mode": reply.get("mode", "AUTO"), "reason": "Local model selected."})
 
     validation = validate_answer(answer if success else "", built["chunks"])
     cited_ids = set(validation["evidence_coverage"]["cited_source_ids"])
@@ -248,6 +251,7 @@ def retrieve_and_generate(repository_path: str, question: str,
         **base,
         "answer": answer,
         "model": model,
+        "routing": routing,
         "success": success,  # True when an answer was generated from retrieved code
         "evidence_status": validation["evidence_status"],
         "validation_passed": validation["validation_passed"],

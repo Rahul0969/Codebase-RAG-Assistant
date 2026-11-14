@@ -18,8 +18,10 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
+
+from .model_router import choose_model, get_preferences
 
 DEFAULT_BASE_URL = "http://localhost:11434"
 DEFAULT_MODEL = "qwen2.5:3b"
@@ -182,6 +184,13 @@ def generate_chat(messages: list[dict[str, str]], settings: LLMSettings | None =
     if not messages:
         raise ValueError("messages must not be empty.")
     settings = settings or get_settings()
+    # Discover installed local models for AUTO/MANUAL routing. Discovery is local-only.
+    registry = _request(settings, "/api/tags", None, min(settings.timeout, 10.0))
+    models = registry.get("models") if isinstance(registry, dict) else None
+    if not isinstance(models, list):
+        raise OllamaResponseError("Ollama returned an unexpected model list.")
+    selected_model, routing = choose_model(models, messages, settings.model)
+    settings = replace(settings, model=selected_model)
     payload = {
         "model": settings.model,
         "messages": messages,
@@ -199,7 +208,7 @@ def generate_chat(messages: list[dict[str, str]], settings: LLMSettings | None =
     text = message.get("content") if isinstance(message, dict) else None
     if not isinstance(text, str) or not text.strip():
         raise OllamaResponseError("Ollama returned an empty or malformed answer.")
-    return {"text": text.strip(), "model": str(result.get("model") or settings.model)}
+    return {"text": text.strip(), "model": str(result.get("model") or settings.model), "routing": routing, "mode": get_preferences()["mode"]}
 
 
 def check_ollama(settings: LLMSettings | None = None, timeout: float = 10.0) -> dict[str, Any]:
@@ -217,3 +226,20 @@ def check_ollama(settings: LLMSettings | None = None, timeout: float = 10.0) -> 
         "model_available": wanted in names or settings.model in names,
         "installed_models": sorted(names)[:50],
     }
+
+
+def list_local_models(settings: LLMSettings | None = None) -> dict[str, Any]:
+    """Return installed Ollama models and persisted routing preferences."""
+    settings = settings or get_settings()
+    result = _request(settings, "/api/tags", None, min(settings.timeout, 10.0))
+    models = result.get("models")
+    if not isinstance(models, list):
+        raise OllamaResponseError("Ollama returned an unexpected model list.")
+    normalized = []
+    for item in models[:100]:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            continue
+        details = item.get("details") if isinstance(item.get("details"), dict) else {}
+        normalized.append({"name": item["name"], "size": item.get("size"),
+            "parameter_size": details.get("parameter_size"), "family": details.get("family")})
+    return {"models": normalized, "preferences": get_preferences()}

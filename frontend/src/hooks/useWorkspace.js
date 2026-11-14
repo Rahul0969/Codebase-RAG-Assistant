@@ -26,6 +26,8 @@ let nextAskId = 1;
 /** All state and actions for the workspace. Components only render and call these. */
 export function useWorkspace(api = getApiSafe()) {
   const [health, setHealth] = useState({ state: 'checking', data: null, error: null });
+  const [modelRouting, setModelRouting] = useState({ models: [], preferences: { mode: 'AUTO', model: '' } });
+  const [lastUsedModel, setLastUsedModel] = useState('');
   const [repoPath, setRepoPathState] = useState(loadPath);
   const [inspect, dispatchInspect] = useReducer(operationReducer, initialOperation);
   const [index, dispatchIndex] = useReducer(operationReducer, initialOperation);
@@ -39,14 +41,20 @@ export function useWorkspace(api = getApiSafe()) {
   const pathRef = useRef(repoPath);
   pathRef.current = repoPath;
 
+  const refreshModelRouting = useCallback(async () => {
+    try { const data = await api.listModels(); setModelRouting(data); return data; }
+    catch { return null; }
+  }, [api]);
+
   const checkBackend = useCallback(async () => {
     try {
       const data = await api.health();
       setHealth({ state: 'online', data, error: null });
+      await refreshModelRouting();
     } catch (error) {
       setHealth({ state: 'offline', data: null, error });
     }
-  }, [api]);
+  }, [api, refreshModelRouting]);
 
   useEffect(() => {
     checkBackend();
@@ -141,6 +149,7 @@ export function useWorkspace(api = getApiSafe()) {
       try {
         const result = await api.ask(path, cleaned, { topK });
         finish({ status: 'done', result });
+        if (result?.model) setLastUsedModel(result.model);
       } catch (error) {
         finish({ status: 'error', error });
       }
@@ -154,7 +163,7 @@ export function useWorkspace(api = getApiSafe()) {
   const asking = asks.some((item) => item.status === 'loading');
 
   return {
-    api, health, checkBackend, repoPath, setRepoPath, pathError,
+    api, health, checkBackend, modelRouting, refreshModelRouting, lastUsedModel, repoPath, setRepoPath, pathError,
     inspect, inspectRepository, index, indexRepository, indexInfo, repositoryReady,
     search, lastQuery, runSearch, asks, asking, askQuestion, clearAsks,
   };

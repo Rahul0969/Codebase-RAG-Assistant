@@ -127,4 +127,3 @@ docs/               SECURITY.md, DEPLOYMENT.md, ARCHITECTURE.md, C11_REPORTS.md,
 setup.bat, start.bat, start-backend.bat, start-frontend.bat
 ```
 
-
